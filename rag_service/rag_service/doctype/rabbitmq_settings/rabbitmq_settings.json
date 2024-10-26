@@ -1,0 +1,82 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-10-24 12:41:40.835656",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "host",
+  "port",
+  "virtual_host",
+  "username",
+  "password",
+  "plagiarism_results_queue",
+  "feedback_request_queue",
+  "feedback_results_queue"
+ ],
+ "fields": [
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "label": "Host"
+  },
+  {
+   "fieldname": "port",
+   "fieldtype": "Data",
+   "label": "Port"
+  },
+  {
+   "fieldname": "virtual_host",
+   "fieldtype": "Data",
+   "label": "Virtual Host"
+  },
+  {
+   "fieldname": "username",
+   "fieldtype": "Data",
+   "label": "Username"
+  },
+  {
+   "fieldname": "password",
+   "fieldtype": "Data",
+   "label": "Password"
+  },
+  {
+   "fieldname": "plagiarism_results_queue",
+   "fieldtype": "Data",
+   "label": "Plagiarism Results Queue"
+  },
+  {
+   "fieldname": "feedback_request_queue",
+   "fieldtype": "Data",
+   "label": "Feedback Request Queue"
+  },
+  {
+   "fieldname": "feedback_results_queue",
+   "fieldtype": "Data",
+   "label": "Feedback Results Queue"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2024-10-24 14:30:50.418428",
+ "modified_by": "Administrator",
+ "module": "Rag Service",
+ "name": "RabbitMQ Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

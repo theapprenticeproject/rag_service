@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-10-24 12:02:46.203107",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "assignment_id",
+  "assignment_name",
+  "course_vertical",
+  "rubric",
+  "learning_objectives",
+  "difficulty_level",
+  "last_updated"
+ ],
+ "fields": [
+  {
+   "fieldname": "assignment_id",
+   "fieldtype": "Data",
+   "label": "Assignment ID"
+  },
+  {
+   "fieldname": "assignment_name",
+   "fieldtype": "Data",
+   "label": "Assignment Name"
+  },
+  {
+   "fieldname": "course_vertical",
+   "fieldtype": "Data",
+   "label": "Course Vertical"
+  },
+  {
+   "fieldname": "rubric",
+   "fieldtype": "Text",
+   "label": "Rubric"
+  },
+  {
+   "fieldname": "learning_objectives",
+   "fieldtype": "Text",
+   "label": "Learning Objectives"
+  },
+  {
+   "fieldname": "difficulty_level",
+   "fieldtype": "Select",
+   "label": "Difficulty Level",
+   "options": "Easy\nMedium\\nHard"
+  },
+  {
+   "fieldname": "last_updated",
+   "fieldtype": "Datetime",
+   "label": "Last Updated"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-10-24 14:30:25.787850",
+ "modified_by": "Administrator",
+ "module": "Rag Service",
+ "name": "Assignment Context",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

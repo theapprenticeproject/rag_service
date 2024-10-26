@@ -1,0 +1,74 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-10-24 11:53:39.768624",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "student_id",
+  "skill_level",
+  "past_performance_summary",
+  "learning_style",
+  "preferred_language",
+  "last_updated"
+ ],
+ "fields": [
+  {
+   "fieldname": "student_id",
+   "fieldtype": "Data",
+   "label": "Student ID",
+   "unique": 1
+  },
+  {
+   "fieldname": "skill_level",
+   "fieldtype": "Select",
+   "label": "Skill Level",
+   "options": "Beginner\nIntermediate\nAdvanced"
+  },
+  {
+   "fieldname": "past_performance_summary",
+   "fieldtype": "Text",
+   "label": "Past Performance Summary"
+  },
+  {
+   "fieldname": "learning_style",
+   "fieldtype": "Select",
+   "label": "Learning Style",
+   "options": "Visual\nAuditory\nKinesthetic"
+  },
+  {
+   "fieldname": "preferred_language",
+   "fieldtype": "Data",
+   "label": "Preferred Language"
+  },
+  {
+   "fieldname": "last_updated",
+   "fieldtype": "Datetime",
+   "label": "Last Updated"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-10-24 14:31:01.662637",
+ "modified_by": "Administrator",
+ "module": "Rag Service",
+ "name": "Student Context",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
