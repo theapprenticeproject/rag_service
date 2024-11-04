@@ -5,25 +5,9 @@ app_description = "an advanced Retrieval-Augmented Generation (RAG) solution bui
 app_email = "mail@evalix.xyz"
 app_license = "mit"
 
-scheduler_events = {
-    "all": [
-        "rag_service.rag_service.utils.rabbitmq_utils.start_consuming"
-    ]
-}
 
-# Doc Events
-doc_events = {
-    "Feedback Request": {
-        "after_insert": "rag_service.rag_service.utils.feedback_generator.process_feedback_request"
-    }
-}
-
-# Fixtures
-fixtures = [
-    {
-        "doctype": "RabbitMQ Settings",
-        "filters": [["name", "like", "%"]]
-    }
+commands = [
+    "rag_service.rag_service.commands.consumer.commands"
 ]
 
 # Apps

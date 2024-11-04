@@ -11,7 +11,10 @@
   "rubric",
   "learning_objectives",
   "difficulty_level",
-  "last_updated"
+  "last_updated",
+  "version",
+  "cache_valid_till",
+  "last_sync_status"
  ],
  "fields": [
   {
@@ -49,11 +52,27 @@
    "fieldname": "last_updated",
    "fieldtype": "Datetime",
    "label": "Last Updated"
+  },
+  {
+   "fieldname": "version",
+   "fieldtype": "Int",
+   "label": "Version"
+  },
+  {
+   "fieldname": "cache_valid_till",
+   "fieldtype": "Datetime",
+   "label": "Cache Valid Till"
+  },
+  {
+   "fieldname": "last_sync_status",
+   "fieldtype": "Select",
+   "label": "Last Sync Status",
+   "options": "Success\nFailed"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-10-24 14:30:25.787850",
+ "modified": "2024-11-01 15:15:36.708856",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "Assignment Context",

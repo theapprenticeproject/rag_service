@@ -7,10 +7,13 @@
  "field_order": [
   "student_id",
   "skill_level",
-  "past_performance_summary",
+  "past_performance",
   "learning_style",
-  "preferred_language",
-  "last_updated"
+  "language",
+  "last_updated",
+  "version",
+  "cache_valid_till",
+  "last_sync_status"
  ],
  "fields": [
   {
@@ -26,30 +29,46 @@
    "options": "Beginner\nIntermediate\nAdvanced"
   },
   {
-   "fieldname": "past_performance_summary",
-   "fieldtype": "Text",
-   "label": "Past Performance Summary"
-  },
-  {
    "fieldname": "learning_style",
    "fieldtype": "Select",
    "label": "Learning Style",
    "options": "Visual\nAuditory\nKinesthetic"
   },
   {
-   "fieldname": "preferred_language",
+   "fieldname": "last_updated",
+   "fieldtype": "Datetime",
+   "label": "Last Updated"
+  },
+  {
+   "fieldname": "language",
    "fieldtype": "Data",
    "label": "Preferred Language"
   },
   {
-   "fieldname": "last_updated",
+   "fieldname": "version",
+   "fieldtype": "Int",
+   "label": "Version"
+  },
+  {
+   "fieldname": "cache_valid_till",
    "fieldtype": "Datetime",
-   "label": "Last Updated"
+   "label": "cache_valid_till"
+  },
+  {
+   "fieldname": "last_sync_status",
+   "fieldtype": "Select",
+   "label": "Last Sync Status",
+   "options": "Success\nFailed"
+  },
+  {
+   "fieldname": "past_performance",
+   "fieldtype": "Text",
+   "label": "Past Performance Summary"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-10-24 14:31:01.662637",
+ "modified": "2024-11-03 23:58:35.391965",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "Student Context",

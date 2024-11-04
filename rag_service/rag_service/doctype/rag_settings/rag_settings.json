@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2024-11-02 15:30:47.447899",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "tap_lms_settings_section",
+  "base_url",
+  "assignment_context_endpoint",
+  "student_context_endpoint",
+  "auth_section",
+  "api_key",
+  "api_secret",
+  "section_break_dots",
+  "cache_duration_days",
+  "enable_caching"
+ ],
+ "fields": [
+  {
+   "fieldname": "base_url",
+   "fieldtype": "Data",
+   "label": "Base URL"
+  },
+  {
+   "fieldname": "assignment_context_endpoint",
+   "fieldtype": "Data",
+   "label": "Assignment Context Endpoint"
+  },
+  {
+   "fieldname": "tap_lms_settings_section",
+   "fieldtype": "Section Break",
+   "label": "TAP LMS Settings"
+  },
+  {
+   "fieldname": "student_context_endpoint",
+   "fieldtype": "Data",
+   "label": "Student Context Endpoint"
+  },
+  {
+   "fieldname": "auth_section",
+   "fieldtype": "Section Break",
+   "label": "Authentication"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Data",
+   "label": "API Key"
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret"
+  },
+  {
+   "fieldname": "section_break_dots",
+   "fieldtype": "Section Break",
+   "label": "Cache Settings"
+  },
+  {
+   "fieldname": "cache_duration_days",
+   "fieldtype": "Int",
+   "label": "Cache Duration (Days)"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_caching",
+   "fieldtype": "Check",
+   "label": "Enable Caching"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2024-11-02 15:54:39.318950",
+ "modified_by": "Administrator",
+ "module": "Rag Service",
+ "name": "RAG Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

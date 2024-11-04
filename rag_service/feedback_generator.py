@@ -1,57 +1,54 @@
-# file: rag_service/rag_service/feedback_generator.py
-
 import frappe
-from langchain import OpenAI, LLMChain
-from langchain.prompts import PromptTemplate
+import json
 
 def get_student_context(student_id):
-    return frappe.get_doc("Student Context", student_id)
+    try:
+        return frappe.get_doc("Student Context", {"student_id": student_id})
+    except frappe.DoesNotExistError:
+        frappe.log_error(f"Student Context not found for student_id: {student_id}")
+        return None
 
 def get_assignment_context(assignment_id):
-    return frappe.get_doc("Assignment Context", assignment_id)
+    try:
+        return frappe.get_doc("Assignment Context", {"assignment_id": assignment_id})
+    except frappe.DoesNotExistError:
+        frappe.log_error(f"Assignment Context not found for assignment_id: {assignment_id}")
+        return None
 
-def get_feedback_template(course_vertical, assignment_type, skill_level):
-    return frappe.get_doc("Feedback Template", {
-        "course_vertical": course_vertical,
-        "assignment_type": assignment_type,
-        "skill_level": skill_level,
-        "active": 1
-    })
-
-def generate_feedback(feedback_request_id):
-    feedback_request = frappe.get_doc("Feedback Request", feedback_request_id)
-    student_context = get_student_context(feedback_request.student_id)
-    assignment_context = get_assignment_context(feedback_request.assignment_id)
-    
-    template = get_feedback_template(
-        assignment_context.course_vertical,
-        assignment_context.assignment_type,
-        student_context.skill_level
-    )
-    
-    prompt = PromptTemplate(
-        input_variables=["assignment", "submission", "rubric", "plagiarism_score"],
-        template=template.template_content
-    )
-    
-    llm = OpenAI(temperature=0.7)
-    chain = LLMChain(llm=llm, prompt=prompt)
-    
-    feedback = chain.run({
-        "assignment": assignment_context.assignment_name,
-        "submission": feedback_request.submission_content,
-        "rubric": assignment_context.rubric,
-        "plagiarism_score": feedback_request.plagiarism_score
-    })
-    
-    feedback_request.generated_feedback = feedback
-    feedback_request.status = "Completed"
-    feedback_request.save()
-    
-    # Send feedback back to TAP LMS (implement this in the next step)
-    send_feedback_to_tap_lms(feedback_request)
-
-def send_feedback_to_tap_lms(feedback_request):
-    # Implementation for sending feedback back to TAP LMS via RabbitMQ
-    # We'll implement this in the next step
-    pass
+def generate_feedback(submission_data):
+    """
+    Initial basic feedback generation
+    """
+    try:
+        # Log the received data
+        frappe.logger().info(f"Generating feedback for submission: {submission_data}")
+        
+        # Extract basic information
+        student_id = submission_data.get("student_id")
+        assignment_id = submission_data.get("assignment_id")
+        plagiarism_score = submission_data.get("plagiarism_score", 0)
+        
+        # Get contexts
+        student_context = get_student_context(student_id)
+        assignment_context = get_assignment_context(assignment_id)
+        
+        # Generate basic feedback
+        feedback = {
+            "status": "completed",
+            "plagiarism_assessment": {
+                "score": plagiarism_score,
+                "flag": "high" if plagiarism_score > 0.8 else "low"
+            },
+            "feedback_text": "Submission received and processed.",
+            "timestamp": frappe.utils.now_datetime()
+        }
+        
+        return feedback
+        
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Error in generate_feedback")
+        return {
+            "status": "error",
+            "error_message": str(e),
+            "timestamp": frappe.utils.now_datetime()
+        }

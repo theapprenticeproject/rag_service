@@ -1,17 +1,17 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2024-10-24 12:27:58.831192",
+ "creation": "2024-11-01 13:45:08.976278",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "template_name",
-  "course_vertical",
   "assignment_type",
-  "skill_level",
-  "template_content",
-  "placeholders",
-  "active",
+  "system_prompt",
+  "user_prompt",
+  "response_format",
+  "variables",
+  "is_active",
   "version",
   "category",
   "tags",
@@ -21,40 +21,45 @@
   {
    "fieldname": "template_name",
    "fieldtype": "Data",
-   "label": "Template Name"
-  },
-  {
-   "fieldname": "course_vertical",
-   "fieldtype": "Data",
-   "label": "Course Vertical"
+   "in_list_view": 1,
+   "label": "Template Name",
+   "reqd": 1
   },
   {
    "fieldname": "assignment_type",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Assignment Type",
-   "options": "Written\nPractical\nPerformance\nCollaborative"
+   "options": "visual_arts\nwritten\nstem_code\nstem_math",
+   "reqd": 1
   },
   {
-   "fieldname": "skill_level",
-   "fieldtype": "Select",
-   "label": "Skill Level",
-   "options": "Beginner\nIntermediate\nAdvanced"
-  },
-  {
-   "fieldname": "template_content",
-   "fieldtype": "Text Editor",
-   "label": "Template Content"
-  },
-  {
-   "fieldname": "placeholders",
+   "fieldname": "system_prompt",
    "fieldtype": "Text",
-   "label": "Placeholders"
+   "label": "System Prompt"
+  },
+  {
+   "fieldname": "user_prompt",
+   "fieldtype": "Text",
+   "label": "User Prompt Template"
+  },
+  {
+   "fieldname": "response_format",
+   "fieldtype": "Code",
+   "label": "Response Format",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "variables",
+   "fieldtype": "Table",
+   "label": "Template Variables",
+   "options": "Prompt Variable"
   },
   {
    "default": "0",
-   "fieldname": "active",
+   "fieldname": "is_active",
    "fieldtype": "Check",
-   "label": "Active"
+   "label": "Is Active"
   },
   {
    "fieldname": "version",
@@ -79,10 +84,10 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-11-01 15:18:53.009862",
+ "modified": "2024-11-03 17:02:58.185711",
  "modified_by": "Administrator",
  "module": "Rag Service",
- "name": "Feedback Template",
+ "name": "Prompt Template",
  "owner": "Administrator",
  "permissions": [
   {

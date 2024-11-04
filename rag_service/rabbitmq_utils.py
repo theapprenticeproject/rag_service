@@ -1,57 +1,72 @@
-# file: rag_service/rag_service/rabbitmq_utils.py
+# File: rag_service/rag_service/rabbitmq_utils.py
 
 import frappe
 import pika
 import json
-from .feedback_generator import generate_feedback
+from .core.rag_utils import process_submission, find_similar_content
 
-def get_rabbitmq_settings():
-    return frappe.get_single("RabbitMQ Settings")
-
-def connect_to_rabbitmq():
-    settings = get_rabbitmq_settings()
-    credentials = pika.PlainCredentials(settings.username, settings.password)
-    parameters = pika.ConnectionParameters(settings.host,
-                                           settings.port,
-                                           settings.virtual_host,
-                                           credentials)
-    return pika.BlockingConnection(parameters)
-
-def process_plagiarism_result(ch, method, properties, body):
+def process_message(ch, method, properties, body):
     try:
-        data = json.loads(body)
+        message_data = json.loads(body)
         
-        # Create a new Feedback Request
+        # Process the submission
+        result = process_submission(
+            message_data.get("submission_id"),
+            message_data.get("content")
+        )
+        
+        # Create feedback request
         feedback_request = frappe.get_doc({
             "doctype": "Feedback Request",
-            "request_id": data.get("submission_id"),
-            "student_id": data.get("student_id"),
-            "assignment_id": data.get("assignment_id"),
-            "submission_id": data.get("submission_id"),
-            "plagiarism_score": data.get("plagiarism_score"),
-            "similar_sources": json.dumps(data.get("similar_sources")),
-            "status": "Pending"
+            "request_id": message_data.get("submission_id"),
+            "student_id": message_data.get("student_id"),
+            "assignment_id": message_data.get("assignment_id"),
+            "submission_content": message_data.get("content"),
+            "plagiarism_score": message_data.get("plagiarism_score"),
+            "status": "Processing",
+            "similar_submissions": json.dumps(result.get("similar_submissions"))
         })
-        feedback_request.insert()
         
-        # Generate feedback
-        generate_feedback(feedback_request.name)
+        feedback_request.insert()
+        frappe.db.commit()
         
     except Exception as e:
-        frappe.log_error(f"Error processing plagiarism result: {str(e)}")
+        frappe.log_error(frappe.get_traceback(), "Error processing RabbitMQ message")
+
 
 def start_consuming():
-    connection = connect_to_rabbitmq()
-    channel = connection.channel()
-    
-    settings = get_rabbitmq_settings()
-    channel.queue_declare(queue=settings.plagiarism_results_queue, durable=True)
-    channel.basic_consume(queue=settings.plagiarism_results_queue, 
-                          on_message_callback=process_plagiarism_result, 
-                          auto_ack=True)
-    
-    print("Starting to consume messages...")
-    channel.start_consuming()
+    try:
+        settings = get_rabbitmq_settings()
+        
+        # Log the connection attempt
+        frappe.logger().info(f"Connecting to RabbitMQ at {settings.host}:{settings.port}")
+        
+        # Create connection
+        credentials = pika.PlainCredentials(settings.username, settings.password)
+        parameters = pika.ConnectionParameters(
+            host=settings.host,
+            port=settings.port,
+            virtual_host=settings.virtual_host,
+            credentials=credentials
+        )
+        
+        connection = pika.BlockingConnection(parameters)
+        channel = connection.channel()
+        
+        # Ensure queue exists
+        channel.queue_declare(queue=settings.plagiarism_results_queue, durable=True)
+        
+        # Set up consumer
+        channel.basic_consume(
+            queue=settings.plagiarism_results_queue,
+            on_message_callback=process_message,
+            auto_ack=True
+        )
+        
+        frappe.logger().info("Started consuming messages...")
+        channel.start_consuming()
+        
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Error in RabbitMQ consumer")
+        raise
 
-# Add this to your hooks.py file to start the consumer when the app starts
-# app_init = "rag_service.rag_service.rabbitmq_utils.start_consuming"

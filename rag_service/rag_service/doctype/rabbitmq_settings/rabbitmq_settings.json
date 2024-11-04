@@ -11,7 +11,6 @@
   "username",
   "password",
   "plagiarism_results_queue",
-  "feedback_request_queue",
   "feedback_results_queue"
  ],
  "fields": [
@@ -46,11 +45,6 @@
    "label": "Plagiarism Results Queue"
   },
   {
-   "fieldname": "feedback_request_queue",
-   "fieldtype": "Data",
-   "label": "Feedback Request Queue"
-  },
-  {
    "fieldname": "feedback_results_queue",
    "fieldtype": "Data",
    "label": "Feedback Results Queue"
@@ -59,7 +53,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2024-10-24 14:30:50.418428",
+ "modified": "2024-11-01 16:19:47.711422",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "RabbitMQ Settings",
