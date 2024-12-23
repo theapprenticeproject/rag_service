@@ -133,6 +133,7 @@ class RabbitMQConsumer:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
+                    print("\nCalling feedback handler...")
                     loop.run_until_complete(
                         self.feedback_handler.handle_submission(message)
                     )
@@ -149,7 +150,6 @@ class RabbitMQConsumer:
                     
             except Exception as e:
                 print(f"\nError processing submission: {str(e)}")
-                # Log the full error
                 frappe.log_error(
                     title="Submission Processing Error",
                     message=f"Error processing submission {message['submission_id']}: {str(e)}\n\nFull message: {json.dumps(message, indent=2)}"

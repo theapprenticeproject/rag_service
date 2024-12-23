@@ -30,7 +30,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Assignment Type",
-   "options": "visual_arts\nwritten\nstem_code\nstem_math",
+   "options": "visual_arts\nwritten\nstem_code\nstem_math\nPractical",
    "reqd": 1
   },
   {
@@ -84,7 +84,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-11-03 17:02:58.185711",
+ "modified": "2024-11-06 01:31:26.472203",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "Prompt Template",

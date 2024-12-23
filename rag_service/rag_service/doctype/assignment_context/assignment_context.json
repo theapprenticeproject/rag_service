@@ -8,13 +8,17 @@
   "assignment_id",
   "assignment_name",
   "course_vertical",
+  "description",
   "rubric",
   "learning_objectives",
   "difficulty_level",
   "last_updated",
   "version",
   "cache_valid_till",
-  "last_sync_status"
+  "last_sync_status",
+  "assignment_type",
+  "reference_image",
+  "max_score"
  ],
  "fields": [
   {
@@ -46,7 +50,7 @@
    "fieldname": "difficulty_level",
    "fieldtype": "Select",
    "label": "Difficulty Level",
-   "options": "Easy\nMedium\\nHard"
+   "options": "Easy\nMedium\nHard"
   },
   {
    "fieldname": "last_updated",
@@ -68,11 +72,31 @@
    "fieldtype": "Select",
    "label": "Last Sync Status",
    "options": "Success\nFailed"
+  },
+  {
+   "fieldname": "assignment_type",
+   "fieldtype": "Data",
+   "label": "Assignment Type"
+  },
+  {
+   "fieldname": "reference_image",
+   "fieldtype": "Data",
+   "label": "Reference Image"
+  },
+  {
+   "fieldname": "max_score",
+   "fieldtype": "Data",
+   "label": "Max Score"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Text",
+   "label": "Description"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-11-01 15:15:36.708856",
+ "modified": "2024-11-06 01:18:12.234630",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "Assignment Context",
