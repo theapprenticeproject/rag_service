@@ -1,11 +1,11 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "hash",
  "creation": "2024-10-24 11:13:39.543922",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "request_id",
   "student_id",
   "assignment_id",
   "submission_id",
@@ -20,15 +20,10 @@
   "template_used",
   "model_used",
   "processing_attempts",
-  "error_log"
+  "error_log",
+  "is_archived"
  ],
  "fields": [
-  {
-   "fieldname": "request_id",
-   "fieldtype": "Data",
-   "label": "Request ID",
-   "unique": 1
-  },
   {
    "fieldname": "student_id",
    "fieldtype": "Data",
@@ -106,14 +101,21 @@
    "fieldname": "error_log",
    "fieldtype": "Text",
    "label": "Error Log"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_archived",
+   "fieldtype": "Check",
+   "label": "Is Archived"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-11-01 15:03:20.857247",
+ "modified": "2024-12-15 08:41:24.861270",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "Feedback Request",
+ "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
   {

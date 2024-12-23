@@ -2,7 +2,6 @@
 
 import frappe
 import json
-import uuid
 from datetime import datetime
 from typing import Dict, Optional
 from ..core.langchain_manager import LangChainManager
@@ -24,17 +23,11 @@ class FeedbackHandler:
             print("\n=== Processing New Submission ===")
             print(f"Submission ID: {message_data.get('submission_id')}")
             
-            # Validate required fields
-            required_fields = ['submission_id', 'student_id', 'assignment_id', 'img_url']
-            missing_fields = [field for field in required_fields if not message_data.get(field)]
-            if missing_fields:
-                raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
-            
             # Create or update feedback request
             request_id = await self.create_feedback_request(message_data)
             print(f"\nFeedback Request Created/Updated: {request_id}")
             
-            # Get assignment context using new manager
+            # Get assignment context
             print(f"\nFetching assignment context for: {message_data['assignment_id']}")
             assignment_context = await self.assignment_context_manager.get_assignment_context(
                 message_data["assignment_id"]
@@ -62,15 +55,14 @@ class FeedbackHandler:
             frappe.log_error(error_msg, "Submission Handler Error")
             
             # Mark request as failed if it exists
-            if request_id:
+            if request_id and frappe.db.exists("Feedback Request", request_id):
                 await self.mark_request_failed(request_id, str(e))
             raise
 
     async def create_feedback_request(self, message_data: Dict) -> str:
         """Create or update feedback request"""
         try:
-            # Generate a unique request ID if not updating existing
-            request_id = ''.join(str(uuid.uuid4()).split('-'))[:10]
+            print("\n=== Creating/Updating Feedback Request ===")
             
             # Check for existing request
             existing_requests = frappe.get_list(
@@ -81,20 +73,20 @@ class FeedbackHandler:
             )
             
             if existing_requests:
-                print(f"\nUpdating existing feedback request: {existing_requests[0].name}")
-                feedback_request = frappe.get_doc(
-                    "Feedback Request", 
-                    existing_requests[0].name
-                )
-                feedback_request.db_set('processing_attempts', feedback_request.processing_attempts + 1)
-                feedback_request.db_set('status', "Processing")
-                feedback_request.db_set('error_log', None)  # Clear previous errors
-                request_id = feedback_request.name
+                request_id = existing_requests[0].name
+                print(f"\nUpdating existing feedback request: {request_id}")
+                
+                # Get and update existing document
+                feedback_request = frappe.get_doc("Feedback Request", request_id)
+                feedback_request.processing_attempts += 1
+                feedback_request.status = "Processing"
+                feedback_request.error_log = None  # Clear previous errors
+                feedback_request.save()
+                
             else:
-                print(f"\nCreating new feedback request: {request_id}")
-                feedback_request = frappe.get_doc({
-                    "doctype": "Feedback Request",
-                    "name": request_id,
+                # Create new document using frappe.new_doc()
+                feedback_request = frappe.new_doc("Feedback Request")
+                feedback_request.update({
                     "submission_id": message_data["submission_id"],
                     "student_id": message_data["student_id"],
                     "assignment_id": message_data["assignment_id"],
@@ -106,7 +98,10 @@ class FeedbackHandler:
                     "processing_attempts": 1
                 })
                 feedback_request.insert()
+                request_id = feedback_request.name
+                print(f"\nCreated new feedback request: {request_id}")
             
+            # Explicitly commit the transaction
             frappe.db.commit()
             
             print(f"Feedback Request Created/Updated Successfully: {request_id}")
@@ -115,6 +110,7 @@ class FeedbackHandler:
         except Exception as e:
             error_msg = f"Error creating feedback request: {str(e)}"
             print(f"\nError: {error_msg}")
+            frappe.db.rollback()  # Rollback on error
             frappe.log_error(error_msg, "Feedback Request Creation Error")
             raise
 
@@ -122,12 +118,14 @@ class FeedbackHandler:
         """Mark feedback request as failed"""
         try:
             print(f"\nMarking request as failed: {request_id}")
+            
             feedback_request = frappe.get_doc("Feedback Request", request_id)
             
             # Update status and error log
-            feedback_request.db_set('status', "Failed")
-            feedback_request.db_set('error_log', error_message)
-            feedback_request.db_set('completed_at', datetime.now())
+            feedback_request.status = "Failed"
+            feedback_request.error_log = error_message
+            feedback_request.completed_at = datetime.now()
+            feedback_request.save()
             
             # Commit changes
             frappe.db.commit()
@@ -137,6 +135,7 @@ class FeedbackHandler:
         except Exception as e:
             error_msg = f"Error marking request as failed: {str(e)}"
             print(f"\nError: {error_msg}")
+            frappe.db.rollback()
             frappe.log_error(error_msg, "Request Failure Update Error")
 
     async def get_request_status(self, request_id: str) -> Dict:
@@ -158,6 +157,12 @@ class FeedbackHandler:
             
             return status
             
+        except frappe.DoesNotExistError:
+            return {
+                "error": "Request not found",
+                "request_id": request_id,
+                "status": "Not Found"
+            }
         except Exception as e:
             error_msg = f"Error getting request status: {str(e)}"
             print(f"\nError: {error_msg}")
@@ -226,5 +231,6 @@ class FeedbackHandler:
         except Exception as e:
             error_msg = f"Error cleaning up old requests: {str(e)}"
             print(f"\nError: {error_msg}")
+            frappe.db.rollback()
             frappe.log_error(error_msg, "Cleanup Error")
             raise
