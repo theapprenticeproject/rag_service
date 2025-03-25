@@ -107,16 +107,27 @@ class AssignmentContextManager:
             
             # Extract assignment data
             assignment = context["assignment"]
-            learning_objectives = context["learning_objectives"]
+            learning_objectives = context.get("learning_objectives", [])
+            
+            # Parse assignment type properly
+            assignment_type = assignment.get("type", "Practical")
+            
+            # If type is empty or invalid, default to Practical
+            valid_types = ["Written", "Practical", "Performance", "Collaborative"]
+            if not assignment_type or assignment_type not in valid_types:
+                assignment_type = "Practical"
+                print(f"Invalid assignment type '{assignment.get('type')}', defaulting to 'Practical'")
             
             # Prepare learning objectives JSON
-            formatted_objectives = [
-                {
-                    "objective_id": obj["objective"],
-                    "description": obj["description"].strip()
-                }
-                for obj in learning_objectives
-            ]
+            formatted_objectives = []
+            if learning_objectives:
+                formatted_objectives = [
+                    {
+                        "objective_id": obj.get("objective", "Unknown"),
+                        "description": obj.get("description", "").strip()
+                    }
+                    for obj in learning_objectives
+                ]
             
             # Check for existing context
             existing = frappe.get_list(
@@ -125,35 +136,43 @@ class AssignmentContextManager:
                 limit=1
             )
             
+            # Determine course vertical
+            course_vertical = "General"
+            if "subject" in assignment and assignment["subject"]:
+                subject_parts = assignment["subject"].split("-")
+                if len(subject_parts) > 1:
+                    course_vertical = subject_parts[-1].strip()
+            
             if existing:
                 # Update existing
                 doc = frappe.get_doc("Assignment Context", existing[0].name)
                 doc.update({
-                    "assignment_name": assignment["name"],
-                    "course_vertical": assignment["subject"].split("-")[-1].strip(),
-                    "assignment_type": assignment["type"],
-                    "reference_image": assignment["reference_image"],
-                    "description": assignment["description"],
+                    "assignment_name": assignment.get("name", ""),
+                    "course_vertical": course_vertical,
+                    "assignment_type": assignment_type,
+                    "reference_image": assignment.get("reference_image", ""),
+                    "description": assignment.get("description", ""),
                     "learning_objectives": json.dumps(formatted_objectives),
-                    "max_score": assignment["max_score"],
+                    "max_score": assignment.get("max_score", "100"),
                     "last_updated": now_datetime(),
                     "cache_valid_till": cache_valid_till,
                     "last_sync_status": "Success",
                     "version": (doc.version or 0) + 1
                 })
                 doc.save()
+                print(f"Updated existing cache for assignment {assignment_id}")
             else:
                 # Create new
                 doc = frappe.get_doc({
                     "doctype": "Assignment Context",
                     "assignment_id": assignment_id,
-                    "assignment_name": assignment["name"],
-                    "course_vertical": assignment["subject"].split("-")[-1].strip(),
-                    "assignment_type": assignment["type"],
-                    "reference_image": assignment["reference_image"],
-                    "description": assignment["description"],
+                    "assignment_name": assignment.get("name", ""),
+                    "course_vertical": course_vertical,
+                    "assignment_type": assignment_type,
+                    "reference_image": assignment.get("reference_image", ""),
+                    "description": assignment.get("description", ""),
                     "learning_objectives": json.dumps(formatted_objectives),
-                    "max_score": assignment["max_score"],
+                    "max_score": assignment.get("max_score", "100"),
                     "difficulty_level": "Medium",  # Default value
                     "last_updated": now_datetime(),
                     "cache_valid_till": cache_valid_till,
@@ -161,6 +180,7 @@ class AssignmentContextManager:
                     "version": 1
                 })
                 doc.insert()
+                print(f"Created new cache for assignment {assignment_id}")
             
             frappe.db.commit()
             print(f"Context cached successfully for {assignment_id}")
@@ -168,12 +188,23 @@ class AssignmentContextManager:
         except Exception as e:
             error_msg = f"Error saving to cache: {str(e)}"
             print(f"\nError: {error_msg}")
+            frappe.db.rollback()  # Rollback on error
             raise Exception(error_msg)
 
     async def _format_cached_context(self, context_name: str) -> Dict:
         """Format cached context for LLM"""
         try:
             context = frappe.get_doc("Assignment Context", context_name)
+            
+            # Parse learning objectives safely
+            learning_objectives = []
+            try:
+                if context.learning_objectives:
+                    learning_objectives = json.loads(context.learning_objectives)
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"Error parsing learning objectives: {str(e)}")
+                # Create an empty default if parsing fails
+                learning_objectives = []
             
             return {
                 "assignment": {
@@ -184,7 +215,7 @@ class AssignmentContextManager:
                     "max_score": context.max_score,
                     "reference_image": context.reference_image
                 },
-                "learning_objectives": json.loads(context.learning_objectives),
+                "learning_objectives": learning_objectives,
                 "course_vertical": context.course_vertical,
                 "difficulty_level": context.difficulty_level
             }
@@ -199,23 +230,41 @@ class AssignmentContextManager:
         try:
             assignment = api_context["assignment"]
             
-            return {
-                "assignment": {
-                    "id": assignment["name"],  # Using name as ID
-                    "name": assignment["name"],
-                    "type": assignment["type"],
-                    "description": assignment["description"],
-                    "max_score": assignment["max_score"],
-                    "reference_image": assignment["reference_image"]
-                },
-                "learning_objectives": [
+            # Determine course vertical
+            course_vertical = "General"
+            if "subject" in assignment and assignment["subject"]:
+                subject_parts = assignment["subject"].split("-")
+                if len(subject_parts) > 1:
+                    course_vertical = subject_parts[-1].strip()
+                    
+            # Parse assignment type correctly
+            assignment_type = assignment.get("type", "Practical")
+            valid_types = ["Written", "Practical", "Performance", "Collaborative"]
+            if not assignment_type or assignment_type not in valid_types:
+                assignment_type = "Practical"
+            
+            # Format learning objectives
+            learning_objectives = []
+            if "learning_objectives" in api_context and api_context["learning_objectives"]:
+                learning_objectives = [
                     {
-                        "objective_id": obj["objective"],
-                        "description": obj["description"].strip()
+                        "objective_id": obj.get("objective", "Unknown"),
+                        "description": obj.get("description", "").strip()
                     }
                     for obj in api_context["learning_objectives"]
-                ],
-                "course_vertical": assignment["subject"].split("-")[-1].strip(),
+                ]
+            
+            return {
+                "assignment": {
+                    "id": assignment.get("name", ""),  # Using name as ID
+                    "name": assignment.get("name", ""),
+                    "type": assignment_type,
+                    "description": assignment.get("description", ""),
+                    "max_score": assignment.get("max_score", "100"),
+                    "reference_image": assignment.get("reference_image", "")
+                },
+                "learning_objectives": learning_objectives,
+                "course_vertical": course_vertical,
                 "difficulty_level": "Medium"  # Default value
             }
             

@@ -37,6 +37,9 @@ class LangChainManager:
                     temperature=settings.temperature,
                     max_tokens=settings.max_tokens
                 )
+            elif settings.provider == "Anthropic":
+                # Add Anthropic model initialization if needed
+                raise Exception("Anthropic provider not yet implemented")
             else:
                 raise Exception(f"Unsupported LLM provider: {settings.provider}")
                 
@@ -49,20 +52,35 @@ class LangChainManager:
     def clean_json_response(self, response: str) -> str:
         """Clean JSON response from various formats"""
         try:
-            # Remove JSON code blocks if present
+            # Remove markdown code blocks if present
             if "```json" in response:
                 response = response.split("```json")[1].split("```")[0].strip()
             elif "```" in response:
-                response = response.split("```")[1].strip()
-                
+                code_blocks = response.split("```")
+                if len(code_blocks) >= 3:  # At least one code block exists
+                    response = code_blocks[1].strip()
+                    # Check if the extracted content looks like JSON
+                    if not (response.startswith('{') or response.startswith('[')):
+                        # If not, try to find JSON in the original response
+                        json_start = response.find('{')
+                        if json_start >= 0:
+                            response = response[json_start:]
+                            
             # Try to extract JSON if response starts with explanation
             if not response.strip().startswith('{'):
-                potential_json = response.split('{', 1)
-                if len(potential_json) > 1:
-                    response = '{' + potential_json[1]
+                json_start = response.find('{')
+                if json_start >= 0:
+                    response = response[json_start:]
+            
+            # Check if the response ends properly
+            if not response.strip().endswith('}'):
+                json_end = response.rfind('}')
+                if json_end >= 0:
+                    response = response[:json_end+1]
                     
             return response.strip()
-        except Exception:
+        except Exception as e:
+            print(f"Error cleaning JSON: {str(e)}")
             return response
 
     async def validate_submission_image(self, image_url: str, assignment_type: str) -> Dict:
@@ -101,26 +119,30 @@ You must respond ONLY with a JSON object containing these exact fields:
                 validation_result = json.loads(cleaned_result)
                 print(f"\nParsed Validation Result: {json.dumps(validation_result, indent=2)}")
                 return validation_result
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                print(f"JSON Decode Error: {str(e)}")
                 return {
-                    "is_valid": False,
-                    "reason": "Failed to validate image format",
-                    "detected_type": "unknown"
+                    "is_valid": True,  # Default to True to avoid false negatives
+                    "reason": "Failed to validate image format, proceeding with analysis",
+                    "detected_type": "unvalidated_submission"
                 }
 
         except Exception as e:
             error_msg = f"Image validation failed: {str(e)}"
             print(f"\nError: {error_msg}")
             return {
-                "is_valid": False,
+                "is_valid": True,  # Default to True to avoid false negatives
                 "reason": error_msg,
-                "detected_type": "error"
+                "detected_type": "error_during_validation"
             }
 
     def format_objectives(self, objectives: List[Dict]) -> str:
         """Format learning objectives for prompt"""
+        if not objectives:
+            return "No specific learning objectives provided for this assignment."
+            
         return "\n".join([
-            f"- {obj['description']}" 
+            f"- {obj.get('description', obj.get('objective_id', 'Unknown objective'))}" 
             for obj in objectives
         ])
 
@@ -135,53 +157,172 @@ You must respond ONLY with a JSON object containing these exact fields:
             }
         }
 
+    def get_prompt_template(self, assignment_type: str) -> Dict:
+        """Get active prompt template for assignment type"""
+        try:
+            # First try to get an exact match for the assignment type
+            templates = frappe.get_list(
+                "Prompt Template",
+                filters={
+                    "assignment_type": assignment_type,
+                    "is_active": 1
+                },
+                order_by="version desc",
+                limit=1
+            )
+            
+            # If no exact match found, try to get a generic template
+            if not templates:
+                print(f"\nNo specific template found for {assignment_type}, looking for generic template")
+                templates = frappe.get_list(
+                    "Prompt Template",
+                    filters={
+                        "is_active": 1
+                    },
+                    order_by="version desc",
+                    limit=1
+                )
+                
+            if not templates:
+                raise Exception(f"No active prompt template found for {assignment_type}")
+                
+            template = frappe.get_doc("Prompt Template", templates[0].name)
+            print(f"\nUsing template: {template.template_name}")
+            
+            # Update the last_used timestamp
+            template.db_set('last_used', datetime.now())
+            frappe.db.commit()
+            
+            return template
+            
+        except Exception as e:
+            error_msg = f"Prompt Template Error: {str(e)}"
+            print(f"\nError: {error_msg}")
+            frappe.log_error(error_msg, "Prompt Template Error")
+            raise
+
+    def get_default_response_format(self, assignment_type: str) -> Dict:
+        """Get default response format if template doesn't define one"""
+        # Default format based on assignment type
+        default_formats = {
+            "Written": {
+                "overall_feedback": "Overall assessment of the written work",
+                "strengths": ["Strength 1", "Strength 2"],
+                "areas_for_improvement": ["Area 1", "Area 2"],
+                "learning_objectives_feedback": ["Feedback on objective 1"],
+                "grade_recommendation": "Numerical grade",
+                "encouragement": "Encouraging message for the student"
+            },
+            "Practical": {
+                "overall_feedback": "Overall assessment of the practical work",
+                "strengths": ["Strength 1", "Strength 2"],
+                "areas_for_improvement": ["Area 1", "Area 2"],
+                "learning_objectives_feedback": ["Feedback on objective 1"],
+                "grade_recommendation": "Numerical grade",
+                "encouragement": "Encouraging message for the student"
+            },
+            "Performance": {
+                "overall_feedback": "Overall assessment of the performance",
+                "strengths": ["Strength 1", "Strength 2"],
+                "areas_for_improvement": ["Area 1", "Area 2"],
+                "learning_objectives_feedback": ["Feedback on objective 1"],
+                "grade_recommendation": "Numerical grade",
+                "encouragement": "Encouraging message for the student"
+            },
+            "Collaborative": {
+                "overall_feedback": "Overall assessment of the collaborative work",
+                "strengths": ["Strength 1", "Strength 2"],
+                "areas_for_improvement": ["Area 1", "Area 2"],
+                "learning_objectives_feedback": ["Feedback on objective 1"],
+                "grade_recommendation": "Numerical grade",
+                "encouragement": "Encouraging message for the student"
+            }
+        }
+        
+        # Return type-specific format or a generic one
+        return default_formats.get(assignment_type, default_formats["Practical"])
+
     async def generate_feedback(self, assignment_context: Dict, submission_url: str, submission_id: str) -> Dict:
         """Generate feedback using LangChain and GPT-4V"""
         try:
             print("\n=== Starting Feedback Generation ===")
             
-            # Get prompt template
-            template = self.get_prompt_template(assignment_context["assignment"]["type"])
+            # Get assignment type from context
+            assignment_type = assignment_context["assignment"]["type"]
+            
+            # Get prompt template based on assignment type
+            template = self.get_prompt_template(assignment_type)
             print("\nTemplate loaded successfully")
 
-            # Validate image first
+            # Get expected response format from template or use default
+            try:
+                if hasattr(template, 'response_format') and template.response_format:
+                    expected_format = json.loads(template.response_format)
+                    print("\nUsing template-defined response format")
+                else:
+                    expected_format = self.get_default_response_format(assignment_type)
+                    print("\nUsing default response format for assignment type:", assignment_type)
+            except json.JSONDecodeError:
+                expected_format = self.get_default_response_format(assignment_type)
+                print("\nFailed to parse template response format, using default")
+
+            # Format expected format as JSON string
+            response_format_str = json.dumps(expected_format, indent=2)
+            
+            # Validate image first (keep this generic)
             validation_result = await self.validate_submission_image(
                 submission_url, 
-                assignment_context["assignment"]["type"]
+                assignment_type
             )
 
             # Process based on validation result
             if validation_result.get("is_valid", False):
                 print("\nValid submission detected - generating feedback")
                 
-                # Format learning objectives
-                learning_objectives = self.format_objectives(assignment_context["learning_objectives"])
+                # Format learning objectives if they exist
+                learning_objectives = ""
+                if assignment_context.get("learning_objectives") and len(assignment_context["learning_objectives"]) > 0:
+                    learning_objectives = self.format_objectives(assignment_context["learning_objectives"])
                 
-                # Enhanced system prompt to enforce JSON response
+                # Prepare system prompt with expected format
                 enhanced_system_prompt = f"""
                 {template.system_prompt}
                 
-                IMPORTANT: You must ALWAYS respond with a valid JSON object containing exactly these fields:
-                {{
-                    "overall_feedback": "detailed feedback about the artwork",
-                    "strengths": ["list", "of", "strengths"],
-                    "areas_for_improvement": ["list", "of", "improvements"],
-                    "learning_objectives_feedback": ["feedback", "for", "each", "objective"],
-                    "grade_recommendation": "numerical grade",
-                    "encouragement": "encouraging message"
-                }}
-
-                If you cannot analyze the image for any reason, provide feedback indicating the issue while maintaining this exact JSON format.
-                Do not include any additional text or explanations outside the JSON object.
+                IMPORTANT: You must ALWAYS respond with a valid JSON object matching this format exactly:
+                {response_format_str}
+                
+                If the image does not appear to be related to this assignment context, set the "overall_feedback" field to EXACTLY:
+                "Something went wrong—It looks like there's an issue from our end or your submission is incorrect! I am not able to provide feedback for your submission."
+                
+                Do not include any additional text, explanation, or markdown formatting outside the JSON object.
+                Return ONLY the JSON object, nothing else.
                 """
+
+                # Format variables for the user prompt
+                user_prompt_vars = {
+                    "assignment_description": assignment_context["assignment"]["description"],
+                    "learning_objectives": learning_objectives,
+                    "assignment_type": assignment_type,
+                    "assignment_name": assignment_context["assignment"]["name"]
+                }
+                
+                # Try to apply any additional variables from the template
+                if hasattr(template, 'variables') and template.variables:
+                    for var in template.variables:
+                        if var.variable_name in assignment_context:
+                            user_prompt_vars[var.variable_name] = assignment_context[var.variable_name]
+                
+                # Format the user prompt with available variables
+                formatted_user_prompt = template.user_prompt
+                for key, value in user_prompt_vars.items():
+                    placeholder = "{" + key + "}"
+                    if placeholder in formatted_user_prompt:
+                        formatted_user_prompt = formatted_user_prompt.replace(placeholder, str(value))
 
                 # Prepare text content
                 text_content = {
                     "type": "text",
-                    "text": template.user_prompt.format(
-                        assignment_description=assignment_context["assignment"]["description"],
-                        learning_objectives=learning_objectives
-                    )
+                    "text": formatted_user_prompt
                 }
 
                 # Prepare image content
@@ -193,7 +334,7 @@ You must respond ONLY with a JSON object containing these exact fields:
                     HumanMessage(content=[text_content, image_content])
                 ]
 
-                print("\nSending request to OpenAI...")
+                print("\nSending request to LLM...")
                 
                 # Generate feedback
                 response = await self.llm.agenerate([messages])
@@ -210,61 +351,46 @@ You must respond ONLY with a JSON object containing these exact fields:
                     feedback = json.loads(cleaned_text)
                     print("\nSuccessfully parsed JSON response")
                     
+                    # Verify that all expected fields are present
+                    for field in expected_format:
+                        if field not in feedback:
+                            if isinstance(expected_format[field], list):
+                                feedback[field] = ["No information provided"]
+                            else:
+                                feedback[field] = f"No information provided for {field}"
+                    
                 except json.JSONDecodeError as e:
                     print(f"\nJSON Parse Error: {str(e)}")
                     print("Using fallback feedback format")
                     
-                    # Fallback JSON response when LLM doesn't provide valid JSON
-                    feedback = {
-                        "overall_feedback": "Something went wrong—It looks like there's an issue from our end or your submission is incorrect! I am not able to provide feedback for your submission.",
-                        "strengths": [
-                            "Submission attempt was made",
-                            "Student engaged with the assignment process"
-                        ],
-                        "areas_for_improvement": [
-                            "Please ensure the submitted work matches the assignment requirements",
-                            "Consider resubmitting with a clearer or more appropriate image",
-                            "Review the assignment instructions carefully"
-                        ],
-                        "learning_objectives_feedback": [
-                            "Unable to evaluate learning objectives due to issues with the submission"
-                        ],
-                        "grade_recommendation": "0",
-                        "encouragement": "We encourage you to review the assignment requirements and submit work that aligns with the expected format and content. Feel free to reach out to your instructor if you need clarification."
-                    }
+                    # Create a fallback response matching the expected format
+                    feedback = {}
+                    for field in expected_format:
+                        if isinstance(expected_format[field], list):
+                            feedback[field] = ["Unable to generate proper feedback due to processing error"]
+                        else:
+                            feedback[field] = "Unable to generate proper feedback due to processing error"
+                    
+                    feedback["error"] = f"JSON parsing error: {str(e)}"
             else:
                 print("\nInvalid submission detected - returning error feedback")
-                feedback = {
-                    "overall_feedback": "Something went wrong—It looks like there's an issue from our end or your submission is incorrect! I am not able to provide feedback for your submission.",
-                    "strengths": [
-                        "Submission attempt was made",
-                        "Student engaged with the assignment process"
-                    ],
-                    "areas_for_improvement": [
-                        f"Current submission appears to be: {validation_result.get('detected_type', 'unknown')}",
-                        "Please ensure the submitted work matches the assignment requirements",
-                        "Review the assignment instructions carefully before resubmitting"
-                    ],
-                    "learning_objectives_feedback": [
-                        "Could not evaluate learning objectives due to invalid submission"
-                    ],
-                    "grade_recommendation": "0",
-                    "encouragement": "We look forward to reviewing your actual artwork submission. Please make sure to submit work that matches the assignment requirements. Don't hesitate to ask for clarification if needed."
-                }
-
-            # Validate feedback structure
-            required_fields = [
-                "overall_feedback",
-                "strengths",
-                "areas_for_improvement",
-                "learning_objectives_feedback",
-                "grade_recommendation",
-                "encouragement"
-            ]
-            
-            missing_fields = [field for field in required_fields if field not in feedback]
-            if missing_fields:
-                raise ValueError(f"Missing required fields in feedback: {missing_fields}")
+                # Create an error feedback matching the expected format
+                feedback = {}
+                
+                # Set the special error message for overall_feedback
+                feedback["overall_feedback"] = "Something went wrong—It looks like there's an issue from our end or your submission is incorrect! I am not able to provide feedback for your submission."
+                
+                # Fill in other required fields
+                for field in expected_format:
+                    if field != "overall_feedback":  # Skip overall_feedback as we've already set it
+                        if isinstance(expected_format[field], list):
+                            feedback[field] = ["Please ensure your submission matches the assignment requirements"]
+                        else:
+                            feedback[field] = "Please ensure your submission matches the assignment requirements"
+                
+                # Add detected type information
+                feedback["detected_type"] = validation_result.get('detected_type', 'unknown')
+                feedback["reason"] = validation_result.get('reason', 'Unknown issue with submission')
 
             print("\n=== Feedback Generation Completed Successfully ===")
             return feedback
@@ -275,55 +401,50 @@ You must respond ONLY with a JSON object containing these exact fields:
             frappe.log_error(message=error_msg, title="Feedback Generation Error")
             raise
 
-    def get_prompt_template(self, assignment_type: str) -> Dict:
-        """Get active prompt template for assignment type"""
-        try:
-            templates = frappe.get_list(
-                "Prompt Template",
-                filters={
-                    "assignment_type": assignment_type,
-                    "is_active": 1
-                },
-                order_by="version desc",
-                limit=1
-            )
-            
-            if not templates:
-                raise Exception(f"No active prompt template found for {assignment_type}")
-                
-            template = frappe.get_doc("Prompt Template", templates[0].name)
-            print(f"\nUsing template: {template.template_name}")
-            return template
-            
-        except Exception as e:
-            error_msg = f"Prompt Template Error: {str(e)}"
-            print(f"\nError: {error_msg}")
-            frappe.log_error(error_msg, "Prompt Template Error")
-            raise
-
     @staticmethod
     def format_feedback_for_display(feedback: Dict) -> str:
         """Format feedback for human-readable display"""
         try:
             formatted = []
             
-            formatted.append("Overall Feedback:")
-            formatted.append(feedback["overall_feedback"])
+            if "overall_feedback" in feedback:
+                formatted.append("Overall Feedback:")
+                formatted.append(feedback["overall_feedback"])
             
-            formatted.append("\nStrengths:")
-            for strength in feedback["strengths"]:
-                formatted.append(f"- {strength}")
+            if "strengths" in feedback:
+                formatted.append("\nStrengths:")
+                for strength in feedback["strengths"]:
+                    formatted.append(f"- {strength}")
+                    
+            if "areas_for_improvement" in feedback:
+                formatted.append("\nAreas for Improvement:")
+                for area in feedback["areas_for_improvement"]:
+                    formatted.append(f"- {area}")
+                    
+            if "learning_objectives_feedback" in feedback:
+                formatted.append("\nLearning Objectives Feedback:")
+                for obj in feedback["learning_objectives_feedback"]:
+                    formatted.append(f"- {obj}")
+                    
+            if "grade_recommendation" in feedback:
+                formatted.append(f"\nGrade Recommendation: {feedback['grade_recommendation']}")
                 
-            formatted.append("\nAreas for Improvement:")
-            for area in feedback["areas_for_improvement"]:
-                formatted.append(f"- {area}")
-                
-            formatted.append("\nLearning Objectives Feedback:")
-            for obj in feedback["learning_objectives_feedback"]:
-                formatted.append(f"- {obj}")
-                
-            formatted.append(f"\nGrade Recommendation: {feedback['grade_recommendation']}")
-            formatted.append(f"\nEncouragement: {feedback['encouragement']}")
+            if "encouragement" in feedback:
+                formatted.append(f"\nEncouragement: {feedback['encouragement']}")
+            
+            # Include any additional fields not in the standard format
+            standard_fields = ["overall_feedback", "strengths", "areas_for_improvement", 
+                              "learning_objectives_feedback", "grade_recommendation", 
+                              "encouragement", "detected_type", "error"]
+            
+            for key, value in feedback.items():
+                if key not in standard_fields:
+                    formatted.append(f"\n{key.replace('_', ' ').title()}:")
+                    if isinstance(value, list):
+                        for item in value:
+                            formatted.append(f"- {item}")
+                    else:
+                        formatted.append(str(value))
             
             return "\n".join(formatted)
             
