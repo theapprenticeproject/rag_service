@@ -20,7 +20,7 @@
    "fieldname": "provider",
    "fieldtype": "Select",
    "label": "LLM Provider",
-   "options": "OpenAI\nAnthropic\nCustom"
+   "options": "OpenAI\nAnthropic\nTogether AI\nCustom"
   },
   {
    "fieldname": "model_name",
@@ -71,7 +71,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2024-11-03 11:45:45.569674",
+ "modified": "2025-05-13 18:29:10.580186",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "LLM Settings",

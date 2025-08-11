@@ -1,15 +1,16 @@
 # rag_service/rag_service/core/langchain_manager.py
 
 import frappe
+from langchain_openai import ChatOpenAI
+from langchain.schema import HumanMessage, SystemMessage
 import json
 from typing import Dict, List, Optional, Union
+import httpx
 from datetime import datetime
-from .llm_providers import create_llm_provider, OpenAIProvider
 
 class LangChainManager:
     def __init__(self):
         self.llm = None
-        self.llm_provider = None
         self.setup_llm()
         
     def setup_llm(self):
@@ -29,18 +30,18 @@ class LangChainManager:
             print(f"Provider: {settings.provider}")
             print(f"Model: {settings.model_name}")
             
-            # Create LLM provider based on settings
-            self.llm_provider = create_llm_provider(
-                provider=settings.provider,
-                api_key=settings.get_password('api_secret'),
-                model_name=settings.model_name,
-                temperature=settings.temperature,
-                max_tokens=settings.max_tokens
-            )
-            
-            # Keep the llm reference for backward compatibility with OpenAI
-            if isinstance(self.llm_provider, OpenAIProvider):
-                self.llm = self.llm_provider.llm
+            if settings.provider == "OpenAI":
+                self.llm = ChatOpenAI(
+                    model_name=settings.model_name,
+                    openai_api_key=settings.get_password('api_secret'),
+                    temperature=settings.temperature,
+                    max_tokens=settings.max_tokens
+                )
+            elif settings.provider == "Anthropic":
+                # Add Anthropic model initialization if needed
+                raise Exception("Anthropic provider not yet implemented")
+            else:
+                raise Exception(f"Unsupported LLM provider: {settings.provider}")
                 
         except Exception as e:
             error_msg = f"LLM Setup Error: {str(e)}"
@@ -98,14 +99,16 @@ You must respond ONLY with a JSON object containing these exact fields:
     "detected_type": "specific description of what type of image this appears to be"
 }}"""
 
-            messages = self.llm_provider.format_messages(
-                system_prompt=validation_prompt,
-                user_prompt="Analyze this image and validate it according to the instructions.",
-                image_url=image_url
-            )
+            messages = [
+                SystemMessage(content=validation_prompt),
+                HumanMessage(content=[{
+                    "type": "image_url",
+                    "image_url": {"url": image_url}
+                }])
+            ]
 
-            response = await self.llm_provider.generate_with_vision(messages)
-            result = response.strip()
+            response = await self.llm.agenerate([messages])
+            result = response.generations[0][0].text.strip()
             print(f"\nRaw Validation Response: {result}")
             
             # Clean and parse the response
@@ -316,17 +319,26 @@ You must respond ONLY with a JSON object containing these exact fields:
                     if placeholder in formatted_user_prompt:
                         formatted_user_prompt = formatted_user_prompt.replace(placeholder, str(value))
 
-                # Prepare messages for the LLM provider
-                messages = self.llm_provider.format_messages(
-                    system_prompt=enhanced_system_prompt,
-                    user_prompt=formatted_user_prompt,
-                    image_url=submission_url
-                )
+                # Prepare text content
+                text_content = {
+                    "type": "text",
+                    "text": formatted_user_prompt
+                }
+
+                # Prepare image content
+                image_content = await self.get_image_content(submission_url)
+
+                # Prepare messages
+                messages = [
+                    SystemMessage(content=enhanced_system_prompt),
+                    HumanMessage(content=[text_content, image_content])
+                ]
 
                 print("\nSending request to LLM...")
                 
                 # Generate feedback
-                raw_text = await self.llm_provider.generate_with_vision(messages)
+                response = await self.llm.agenerate([messages])
+                raw_text = response.generations[0][0].text.strip()
                 print("\nRaw LLM Response:")
                 print(raw_text)
 
@@ -387,21 +399,7 @@ You must respond ONLY with a JSON object containing these exact fields:
             error_msg = f"Error generating feedback for submission {submission_id}: {str(e)}"
             print(f"\nError: {error_msg}")
             frappe.log_error(message=error_msg, title="Feedback Generation Error")
-            
-            # Return a structured error response
-            expected_format = self.get_default_response_format(assignment_type)
-            error_feedback = {}
-            
-            for field in expected_format:
-                if field == "overall_feedback":
-                    error_feedback[field] = "Something went wrong—It looks like there's an issue from our end or your submission is incorrect! I am not able to provide feedback for your submission."
-                elif isinstance(expected_format[field], list):
-                    error_feedback[field] = ["Error generating feedback"]
-                else:
-                    error_feedback[field] = "Error generating feedback"
-            
-            error_feedback["error"] = str(e)
-            return error_feedback
+            raise
 
     @staticmethod
     def format_feedback_for_display(feedback: Dict) -> str:
@@ -453,16 +451,16 @@ You must respond ONLY with a JSON object containing these exact fields:
         except Exception as e:
             error_msg = f"Error formatting feedback: {str(e)}"
             print(f"\nError: {error_msg}")
-            return "Error formatting feedback for display. Please check the JSON feedback data."
+            return "Error formatting feedback"
 
     def get_current_config(self) -> Dict:
         """Get current LLM configuration"""
-        if not self.llm_provider:
+        if not self.llm:
             return {"status": "not_configured"}
             
         return {
-            "provider": self.llm_provider.__class__.__name__,
-            "model": self.llm_provider.model_name,
-            "temperature": self.llm_provider.temperature,
-            "max_tokens": self.llm_provider.max_tokens
+            "provider": self.llm.__class__.__name__,
+            "model": self.llm.model_name,
+            "temperature": self.llm.temperature,
+            "max_tokens": self.llm.max_tokens
         }
