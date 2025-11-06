@@ -29,7 +29,7 @@ class FeedbackProcessor:
             feedback_request.db_set('feedback_summary', formatted_feedback, update_modified=True)
             feedback_request.db_set('completed_at', datetime.now(), update_modified=True)
             
-            # Get and set template and model info
+            # Get and set LLM model info
             llm_settings = frappe.get_list(
                 "LLM Settings",
                 filters={"is_active": 1},
@@ -38,44 +38,28 @@ class FeedbackProcessor:
             if llm_settings:
                 feedback_request.db_set('model_used', llm_settings[0].name, update_modified=True)
 
-            # Get assignment type from Assignment Context
-            assignment_type = None
-            assignment_context = frappe.get_list(
-                "Assignment Context", 
-                filters={"assignment_id": feedback_request.assignment_id},
-                fields=["assignment_type"],
-                limit=1
-            )
-            
-            if assignment_context:
-                assignment_type = assignment_context[0].assignment_type
-                print(f"Assignment type found: {assignment_type}")
-            
-                # Get matching template for this assignment type
-                template = frappe.get_list(
+            # FIXED: Get universal template (no assignment_type filtering)
+            print("Getting universal template...")
+            try:
+                # Get any active template (same logic as langchain_manager.py)
+                templates = frappe.get_list(
                     "Prompt Template",
-                    filters={
-                        "assignment_type": assignment_type,
-                        "is_active": 1
-                    },
+                    filters={"is_active": 1},  # Only filter by active status
                     order_by="version desc",
                     limit=1
                 )
                 
-                if template:
-                    feedback_request.db_set('template_used', template[0].name, update_modified=True)
-                    print(f"Using template: {template[0].name}")
+                if templates:
+                    feedback_request.db_set('template_used', templates[0].name, update_modified=True)
+                    print(f"Using universal template: {templates[0].name}")
                 else:
-                    # Try to find a generic template if no specific one was found
-                    generic_template = frappe.get_list(
-                        "Prompt Template",
-                        filters={"is_active": 1},
-                        order_by="version desc",
-                        limit=1
-                    )
-                    if generic_template:
-                        feedback_request.db_set('template_used', generic_template[0].name, update_modified=True)
-                        print(f"Using generic template: {generic_template[0].name}")
+                    print("No active template found - leaving template_used empty")
+                    feedback_request.db_set('template_used', '', update_modified=True)
+                    
+            except Exception as template_error:
+                print(f"Error getting template: {str(template_error)}")
+                # Don't fail the entire process for template tracking issues
+                feedback_request.db_set('template_used', '', update_modified=True)
             
             # Commit changes
             frappe.db.commit()
@@ -86,6 +70,7 @@ class FeedbackProcessor:
             print(f"Status: {updated_doc.status}")
             print(f"Has Generated Feedback: {bool(updated_doc.generated_feedback)}")
             print(f"Has Feedback Summary: {bool(updated_doc.feedback_summary)}")
+            print(f"Template Used: {updated_doc.template_used}")
             
             # Prepare and send message to TAP LMS
             message = {
