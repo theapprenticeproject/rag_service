@@ -37,7 +37,7 @@ class FeedbackHandler:
             print(f"\nPlagiarism Check - ID: {submission_id}, \
                         Plagiarized: {is_plagiarized}, Match Type: {match_type}, \
                         Similarity Score: {similarity_score}, Source: {plagiarism_source}, \
-                        Similar Sources: {similar_sources}, \
+                        Similar Sources: {similar_sources}, Detection Source: {ai_detection_source}, \
                         AI Generated: {is_ai_generated}, AI Confidence: {ai_confidence}")    
             
             # Create or update feedback request
