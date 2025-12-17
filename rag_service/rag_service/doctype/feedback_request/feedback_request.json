@@ -21,7 +21,14 @@
   "model_used",
   "processing_attempts",
   "error_log",
-  "is_archived"
+  "is_archived",
+  "result_status",
+  "is_plagiarized",
+  "match_type",
+  "plagiarism_source",
+  "is_ai_generated",
+  "ai_detection_source",
+  "ai_confidence"
  ],
  "fields": [
   {
@@ -107,6 +114,48 @@
    "fieldname": "is_archived",
    "fieldtype": "Check",
    "label": "Is Archived"
+  },
+  {
+   "fieldname": "result_status",
+   "fieldtype": "Select",
+   "label": "Result Status",
+   "options": "Pending\nSuccess - Original\nSuccess - Flagged\nFailed",
+   "default": "Pending",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Overall feedback generation result status"
+  },
+  {
+   "fieldname": "is_plagiarized",
+   "fieldtype": "Check",
+   "label": "Is Plagiarized"
+  },
+  {
+   "fieldname": "match_type",
+   "fieldtype": "Select",
+   "label": "Match Type",
+   "options": "\noriginal\nexact_duplicate\nnear_duplicate\nsemantic_match\nai_generated\nresubmission_allowed"
+  },
+  {
+   "fieldname": "plagiarism_source",
+   "fieldtype": "Select",
+   "label": "Plagiarism Source",
+   "options": "\nnone\npeer\npeer_collusion\nself_cross_assignment\nself_late_resubmission\nreference\nai_generated"
+  },
+  {
+   "fieldname": "is_ai_generated",
+   "fieldtype": "Check",
+   "label": "Is AI Generated"
+  },
+  {
+   "fieldname": "ai_detection_source",
+   "fieldtype": "Data",
+   "label": "AI Detection Source"
+  },
+  {
+   "fieldname": "ai_confidence",
+   "fieldtype": "Float",
+   "label": "AI Confidence"
   }
  ],
  "index_web_pages_for_search": 1,
