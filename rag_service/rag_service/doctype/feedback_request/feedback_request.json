@@ -89,9 +89,8 @@
   },
   {
    "fieldname": "template_used",
-   "fieldtype": "Link",
-   "label": "Template Used",
-   "options": "Prompt Template"
+   "fieldtype": "Text",
+   "label": "Template Used"
   },
   {
    "fieldname": "model_used",

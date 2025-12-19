@@ -10,56 +10,23 @@ class FeedbackProcessor:
     def __init__(self):
         self.queue_manager = QueueManager()
 
-    async def process_feedback(self, request_id: str, feedback: Dict) -> None:
+    async def process_feedback(self, request_id: str, feedback: Dict, model_used: str, template_used: str) -> None:
         """Process and store feedback in Feedback Request DocType"""
         try:
             print(f"\n=== Processing Feedback for Request: {request_id} ===")
-            
+
             # Get the feedback request document
             feedback_request = frappe.get_doc("Feedback Request", request_id)
             print(f"Found Feedback Request: {feedback_request.name}")
-            
-            # Format feedback for display
-            formatted_feedback = self.format_feedback_for_display(feedback)
-            
+
             print("\nUpdating Feedback Request fields...")
             # Update document fields using db_set
             feedback_request.db_set('status', 'Completed', update_modified=True)
             feedback_request.db_set('generated_feedback', json.dumps(feedback, indent=2), update_modified=True)
             feedback_request.db_set('feedback_summary', formatted_feedback, update_modified=True)
             feedback_request.db_set('completed_at', datetime.now(), update_modified=True)
-            
-            # Get and set LLM model info
-            llm_settings = frappe.get_list(
-                "LLM Settings",
-                filters={"is_active": 1},
-                limit=1
-            )
-            if llm_settings:
-                feedback_request.db_set('model_used', llm_settings[0].name, update_modified=True)
-
-            # FIXED: Get universal template (no assignment_type filtering)
-            print("Getting universal template...")
-            try:
-                # Get any active template (same logic as langchain_manager.py)
-                templates = frappe.get_list(
-                    "Prompt Template",
-                    filters={"is_active": 1},  # Only filter by active status
-                    order_by="version desc",
-                    limit=1
-                )
-                
-                if templates:
-                    feedback_request.db_set('template_used', templates[0].name, update_modified=True)
-                    print(f"Using universal template: {templates[0].name}")
-                else:
-                    print("No active template found - leaving template_used empty")
-                    feedback_request.db_set('template_used', '', update_modified=True)
-                    
-            except Exception as template_error:
-                print(f"Error getting template: {str(template_error)}")
-                # Don't fail the entire process for template tracking issues
-                feedback_request.db_set('template_used', '', update_modified=True)
+            feedback_request.db_set('model_used', model_used, update_modified=True)
+            feedback_request.db_set('template_used', template_used, update_modified=True)
             
             # Commit changes
             frappe.db.commit()
@@ -70,6 +37,7 @@ class FeedbackProcessor:
             print(f"Status: {updated_doc.status}")
             print(f"Has Generated Feedback: {bool(updated_doc.generated_feedback)}")
             print(f"Has Feedback Summary: {bool(updated_doc.feedback_summary)}")
+            print(f"Model Used: {updated_doc.model_used}")
             print(f"Template Used: {updated_doc.template_used}")
             
             # Prepare and send message to TAP LMS
@@ -79,9 +47,18 @@ class FeedbackProcessor:
                 "assignment_id": feedback_request.assignment_id,
                 "feedback": feedback,
                 "summary": formatted_feedback,
+
+                "is_plagiarized": feedback['plagiarism_output']['is_plagiarized'],
+                "is_ai_generated": feedback['plagiarism_output']['is_ai_generated'],
+                "match_type": feedback['plagiarism_output']['match_type'],
+                "plagiarism_source": feedback['plagiarism_output']['plagiarism_source'],
+                "similarity_score": feedback['plagiarism_output']['similarity_score'],
+                "ai_detection_source": feedback['plagiarism_output']['ai_detection_source'],
+                "ai_confidence": feedback['plagiarism_output']['ai_confidence'],
+
                 "generated_at": feedback_request.completed_at.isoformat() if feedback_request.completed_at else datetime.now().isoformat(),
-                "plagiarism_score": feedback_request.plagiarism_score,
-                "similar_sources": json.loads(feedback_request.similar_sources or '[]')
+                # "plagiarism_score": feedback_request.plagiarism_score,
+                # "similar_sources": json.loads(feedback_request.similar_sources or '[]')
             }
             
             # Send to TAP LMS queue

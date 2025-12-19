@@ -25,9 +25,11 @@ class LangChainManager:
                 raise Exception("No active LLM configuration found")
                 
             settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
+            self.model_used = llm_settings[0].name
             print("\nUsing LLM Settings:")
             print(f"Provider: {settings.provider}")
             print(f"Model: {settings.model_name}")
+            
             
             # Create LLM provider based on settings
             self.llm_provider = create_llm_provider(
@@ -121,27 +123,27 @@ class LangChainManager:
                 self.template_name = "Built-in Universal Template"
                 self.system_prompt = """You are an expert educational feedback assistant that provides constructive, age-appropriate feedback on student submissions across all subjects and assignment types. You adapt your evaluation criteria and language based on the assignment context provided.
 
-CRITICAL: You must ALWAYS respond with valid JSON, never plain text."""
+                                        CRITICAL: You must ALWAYS respond with valid JSON, never plain text."""
 
                 self.user_prompt = """Assignment Context:
-Assignment Name: {assignment_name}
-Subject Area: {course_vertical}
-Assignment Type: {assignment_type}
-Description: {assignment_description}
+                                        Assignment Name: {assignment_name}
+                                        Subject Area: {course_vertical}
+                                        Assignment Type: {assignment_type}
+                                        Description: {assignment_description}
 
-Learning Objectives:
-{learning_objectives}
+                                        Learning Objectives:
+                                        {learning_objectives}
 
-Please analyze this student submission and provide feedback in the required JSON format."""
+                                        Please analyze this student submission and provide feedback in the required JSON format."""
 
                 self.response_format = """{
-    "overall_feedback": "Comprehensive feedback about the submission",
-    "strengths": ["Specific strength 1", "Specific strength 2", "Specific strength 3"],
-    "areas_for_improvement": ["Improvement area 1", "Improvement area 2"],
-    "learning_objectives_feedback": ["Feedback on learning objective 1"],
-    "grade_recommendation": 85,
-    "encouragement": "Encouraging message for the student"
-}"""
+                                            "overall_feedback": "Comprehensive feedback about the submission",
+                                            "strengths": ["Specific strength 1", "Specific strength 2", "Specific strength 3"],
+                                            "areas_for_improvement": ["Improvement area 1", "Improvement area 2"],
+                                            "learning_objectives_feedback": ["Feedback on learning objective 1"],
+                                            "grade_recommendation": 85,
+                                            "encouragement": "Encouraging message for the student"
+                                        }"""
         
         return BuiltinTemplate()
 
@@ -251,8 +253,32 @@ Please analyze this student submission and provide feedback in the required JSON
                 # Create structured fallback response
                 feedback = self.create_fallback_feedback(assignment_context, expected_format)
 
+            # Attach default plagiarism/AI-detection metadata
+            plagiarism_output = {
+                "is_plagiarized": False,
+                "is_ai_generated": False,
+                "match_type": "original",
+                "plagiarism_source": "none",
+                "similarity_score": 0.0,
+                "ai_detection_source": "none",
+                "ai_confidence": 0.0,
+                "similar_sources": []
+            }
+            feedback["plagiarism_output"] = plagiarism_output
+
+            try:
+                if hasattr(template, 'name'):
+                    template_used = template.name
+                else:
+                    template_used = "Built-in Universal Template"
+
+            except Exception as template_error:
+                print("Used Default Template:")
+                template_used = "Built-in Universal Template"
+                # Don't fail the entire process for template tracking issues
+
             print("\n=== Feedback Generation Completed Successfully ===")
-            return feedback
+            return feedback, template_used
 
         except Exception as e:
             error_msg = f"Error generating feedback for submission {submission_id}: {str(e)}"
@@ -260,7 +286,9 @@ Please analyze this student submission and provide feedback in the required JSON
             frappe.log_error(message=error_msg, title="Feedback Generation Error")
             
             # Return structured error response
-            return self.create_error_feedback(assignment_context)
+            template_used = "Built-in Universal Template for Error"
+            return self.create_error_feedback(assignment_context), template_used
+
 
 
 
@@ -286,24 +314,24 @@ Please analyze this student submission and provide feedback in the required JSON
                         plagiarism_data,
                         assignment_context
                     )
-                    await self._update_result_status(feedback_request_id, result_status)
-                    return feedback
+                    tempalate_used = "Feedback Template for AI Generated Submission"
 
                 # Handle plagiarized submissions
-                if is_plagiarized and match_type in ["exact_duplicate", "near_duplicate"]:
+                elif is_plagiarized and match_type in ["exact_duplicate", "near_duplicate"]:
                     result_status = "Success - Flagged"
                     feedback = self._create_plagiarism_feedback(
                         plagiarism_data,
                         assignment_context
                     )
-                    await self._update_result_status(feedback_request_id, result_status)
-                    return feedback
+                    tempalate_used = "Feedback Template for Plagiarized Submission"
+                
+                # Continue with normal feedback generation for original work
+                else:
+                    result_status = "Success - Original"
+                    feedback, tempalate_used = await self.generate_feedback_universal(assignment_context, submission_url,submission_id)
 
-            # Continue with normal feedback generation for original work
-            result_status = "Success - Original"
-            feedback = await self.generate_feedback_universal(assignment_context, submission_url,submission_id)
             await self._update_result_status(feedback_request_id, result_status)
-            return feedback
+            return feedback, self.model_used, tempalate_used
 
         except Exception as e:
             result_status = "Failed"
@@ -332,68 +360,66 @@ Please analyze this student submission and provide feedback in the required JSON
 
         ai_source = plagiarism_data.get("ai_detection_source", "unknown")
         ai_confidence = plagiarism_data.get("ai_confidence", 0.0)
-
-        return {
-            "overall_feedback": f"""Your submission appears to be generated by an AI tool
-            (detected source: {ai_source}, confidence: {ai_confidence:.0%}).
-
-            At MentorMe, we encourage original creative work that reflects your own learning
-            and artistic development. AI-generated images, while interesting, don't demonstrate
-            the skills and creativity we're looking to nurture.
-
-            Please submit your own original artwork for this assignment.""",
-
-                    "strengths": ["N/A - AI-generated content detected"],
-                    "areas_for_improvement": [
-                        "Submit original artwork created by you",
-                        "Review assignment guidelines for creative direction"
-                    ],
-                    "learning_objectives_feedback": [
-                        "Unable to assess - submission flagged as AI-generated"
-                    ],
-                    "grade_recommendation": 0,
-                    "encouragement": "We believe in your creative abilities!",
-                    "plagiarism_flag": {
-                        "is_flagged": True,
-                        "flag_type": "ai_generated",
-                        "confidence": ai_confidence
-                        }
+        response = {
+            "overall_feedback": f"Your submission appears to be generated by an \
+            AI tool (detected source: {ai_source}, confidence: {ai_confidence:.0%}). \
+            At MentorMe, we encourage original creative work that reflects your own learning \
+            and artistic development. AI-generated images, while interesting, don't demonstrate \
+            the skills and creativity we're looking to nurture. Please submit your own original \
+            artwork for this assignment.",
+            "strengths": ["N/A - AI-generated content detected"],
+            "areas_for_improvement": ["Submit original artwork created by you",
+                                      "Review assignment guidelines for creative direction"],
+            "learning_objectives_feedback": ["Unable to assess - submission flagged as AI-generated"],
+            "grade_recommendation": 0,
+            "encouragement": "We believe in your creative abilities!",
+            "plagiarism_output": {
+                "is_plagiarized": False,
+                "is_ai_generated": True,
+                "match_type": "ai_generated",
+                "plagiarism_source": "none",
+                "similarity_score": 0.0,
+                "ai_detection_source": ai_source,
+                "ai_confidence": ai_confidence,
+            }
         }
 
-    def _create_plagiarism_feedback(
-        self,
-        plagiarism_data: Dict,
-        assignment_context: Dict
-    ) -> Dict:
+        return response
+
+
+    def _create_plagiarism_feedback( self, plagiarism_data: Dict, assignment_context: Dict) -> Dict:
         """Create feedback for plagiarized submissions"""
 
         match_type = plagiarism_data.get("match_type")
         plagiarism_source = plagiarism_data.get("plagiarism_source")
         similarity_score = plagiarism_data.get("similarity_score", 0.0)
+        ai_confidence = plagiarism_data.get("ai_confidence", 0.0)
 
-        return {
-            "overall_feedback": f"""Your submission has been flagged for similarity
-                (similarity: {similarity_score:.0%}, source: {plagiarism_source}).
-
-                Academic integrity is fundamental to the learning process. Please ensure your
-                submissions represent your own original work.""",
-
-                        "strengths": ["N/A - Submission flagged for similarity"],
-                        "areas_for_improvement": [
-                            "Create original artwork for this assignment",
-                            "Review academic integrity guidelines"
-                        ],
-                        "learning_objectives_feedback": [
-                            "Unable to assess - submission flagged for similarity"
-                        ],
-                        "grade_recommendation": 0,
-                        "encouragement": "Every artist develops their unique style through practice!",
-                        "plagiarism_flag": {
-                            "is_flagged": True,
-                            "flag_type": plagiarism_source,
-                            "similarity_score": similarity_score
-                            }
+        # respond with structured feedback
+        response = {
+            "overall_feedback": f"Your submission has been flagged for similarity \
+                (similarity: {similarity_score:.0%}, source: {plagiarism_source}).\
+                Academic integrity is fundamental to the learning process. Please ensure your \
+                submissions represent your own original work.",
+            "strengths": ["N/A - Submission flagged for similarity"],
+            "areas_for_improvement": ["Create original artwork for this assignment",
+                                      "Review academic integrity guidelines"],
+            "learning_objectives_feedback": ["Unable to assess - submission flagged for similarity"],
+            "grade_recommendation": 0,
+            "encouragement": "Every artist develops their unique style through practice!",
+            "plagiarism_output": {
+                "is_plagiarized": True,
+                "is_ai_generated": False,
+                "match_type": match_type,
+                "plagiarism_source": plagiarism_source,
+                "similarity_score": similarity_score,
+                "ai_detection_source": "none",
+                "ai_confidence": ai_confidence,
+            }
         }
+
+        return response 
+
 
 
 

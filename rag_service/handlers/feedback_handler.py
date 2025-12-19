@@ -37,7 +37,7 @@ class FeedbackHandler:
             print(f"\nPlagiarism Check - ID: {submission_id}, \
                         Plagiarized: {is_plagiarized}, Match Type: {match_type}, \
                         Similarity Score: {similarity_score}, Source: {plagiarism_source}, \
-                        Similar Sources: {similar_sources}, Detection Source: {ai_detection_source}, \
+                        Similar Sources: {similar_sources}, \
                         AI Generated: {is_ai_generated}, AI Confidence: {ai_confidence}")    
             
             # Create or update feedback request
@@ -55,18 +55,17 @@ class FeedbackHandler:
             
             print("\nGenerating feedback...")
             # Generate feedback
-            feedback = await self.langchain_manager.generate_feedback(
+            feedback, model_used, template_used = await self.langchain_manager.generate_feedback(
                 assignment_context=assignment_context,
                 submission_url=message_data["img_url"],
                 submission_id=request_id,
                 plagiarism_data=message_data,
                 feedback_request_id=request_id
-
             )
             
             print("\nFeedback generated, processing feedback...")
             # Process and deliver feedback
-            await self.feedback_processor.process_feedback(request_id, feedback)
+            await self.feedback_processor.process_feedback(request_id, feedback, model_used, template_used)
             print("\nFeedback processing completed")
             
         except Exception as e:
@@ -118,6 +117,7 @@ class FeedbackHandler:
                     "is_ai_generated": message_data.get("is_ai_generated", False),
                     "ai_confidence": message_data.get("ai_confidence", 0.0),
                     "similar_sources": json.dumps(message_data.get("similar_sources", [])),
+                    "ai_detection_source": message_data.get("ai_detection_source", "unknown"),
                     "status": "Processing",
                     "created_at": datetime.now(),
                     "processing_attempts": 1
