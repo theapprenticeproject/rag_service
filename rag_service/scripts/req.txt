@@ -1,0 +1,1 @@
+pip install langchain==0.0.354 langchain-core==0.1.23 langchain-community==0.0.20 langchain-openai
