@@ -291,28 +291,28 @@ class AssignmentContextManager:
             print(f"\nError: {error_msg}")
             raise Exception(error_msg)
 
-    def verify_settings(self) -> Dict:
-        """Verify RAG Settings configuration"""
-        try:
-            results = {
-                "base_url": bool(self.settings.base_url),
-                "api_key": bool(self.settings.api_key),
-                "api_secret": bool(self.settings.get_password('api_secret')),
-                "endpoints": bool(self.settings.assignment_context_endpoint),
-                "cache_config": bool(self.settings.cache_duration_days is not None)
-            }
+    # def verify_settings(self) -> Dict:
+    #     """Verify RAG Settings configuration"""
+    #     try:
+    #         results = {
+    #             "base_url": bool(self.settings.base_url),
+    #             "api_key": bool(self.settings.api_key),
+    #             "api_secret": bool(self.settings.get_password('api_secret')),
+    #             "endpoints": bool(self.settings.assignment_context_endpoint),
+    #             "cache_config": bool(self.settings.cache_duration_days is not None)
+    #         }
             
-            missing = [k for k, v in results.items() if not v]
+    #         missing = [k for k, v in results.items() if not v]
             
-            return {
-                "status": "Valid" if not missing else "Invalid",
-                "missing_settings": missing,
-                "cache_enabled": self.settings.enable_caching,
-                "cache_duration": self.settings.cache_duration_days
-            }
+    #         return {
+    #             "status": "Valid" if not missing else "Invalid",
+    #             "missing_settings": missing,
+    #             "cache_enabled": self.settings.enable_caching,
+    #             "cache_duration": self.settings.cache_duration_days
+    #         }
             
-        except Exception as e:
-            return {
-                "status": "Error",
-                "error": str(e)
-            }
+    #     except Exception as e:
+    #         return {
+    #             "status": "Error",
+    #             "error": str(e)
+    #         }

@@ -22,6 +22,23 @@ class FeedbackHandler:
         try:
             print("\n=== Processing New Submission ===")
             print(f"Submission ID: {message_data.get('submission_id')}")
+
+
+            submission_id = message_data.get("submission_id")
+            is_plagiarized = message_data.get("is_plagiarized", False)
+            match_type = message_data.get("match_type", "original")
+            similarity_score = message_data.get("similarity_score", 0.0)
+            plagiarism_source = message_data.get("plagiarism_source", "none")
+            similar_sources = message_data.get("similar_sources", [])
+            is_ai_generated = message_data.get("is_ai_generated", False)
+            ai_detection_source = message_data.get("ai_detection_source", "unknown")
+            ai_confidence = message_data.get("ai_confidence", 0.0)
+
+            print(f"\nPlagiarism Check - ID: {submission_id}, \
+                        Plagiarized: {is_plagiarized}, Match Type: {match_type}, \
+                        Similarity Score: {similarity_score}, Source: {plagiarism_source}, \
+                        Similar Sources: {similar_sources}, \
+                        AI Generated: {is_ai_generated}, AI Confidence: {ai_confidence}")    
             
             # Create or update feedback request
             request_id = await self.create_feedback_request(message_data)
@@ -38,15 +55,17 @@ class FeedbackHandler:
             
             print("\nGenerating feedback...")
             # Generate feedback
-            feedback = await self.langchain_manager.generate_feedback(
+            feedback, model_used, template_used = await self.langchain_manager.generate_feedback(
                 assignment_context=assignment_context,
                 submission_url=message_data["img_url"],
-                submission_id=request_id
+                submission_id=request_id,
+                plagiarism_data=message_data,
+                feedback_request_id=request_id
             )
             
             print("\nFeedback generated, processing feedback...")
             # Process and deliver feedback
-            await self.feedback_processor.process_feedback(request_id, feedback)
+            await self.feedback_processor.process_feedback(request_id, feedback, model_used, template_used)
             print("\nFeedback processing completed")
             
         except Exception as e:
@@ -92,7 +111,13 @@ class FeedbackHandler:
                     "assignment_id": message_data["assignment_id"],
                     "submission_content": message_data["img_url"],
                     "plagiarism_score": message_data.get("plagiarism_score", 0.0),
+                    "is_plagiarized": message_data.get("is_plagiarized", False),
+                    "plagiarism_source": message_data.get("plagiarism_source", "none"),
+                    "match_type": message_data.get("match_type", "original"),
+                    "is_ai_generated": message_data.get("is_ai_generated", False),
+                    "ai_confidence": message_data.get("ai_confidence", 0.0),
                     "similar_sources": json.dumps(message_data.get("similar_sources", [])),
+                    "ai_detection_source": message_data.get("ai_detection_source", "unknown"),
                     "status": "Processing",
                     "created_at": datetime.now(),
                     "processing_attempts": 1
