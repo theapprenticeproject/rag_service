@@ -37,7 +37,14 @@ class AssignmentContextManager:
                 
                 if cached_context:
                     print("Found cached context")
-                    return await self._format_cached_context(cached_context[0].name)
+                    cached_context = frappe.get_doc("Assignment Context", cached_context[0].name).as_dict()
+                    # remove fields where value is a datatime object
+                    for key in list(cached_context.keys()):
+                        if isinstance(cached_context[key], datetime):
+                            cached_context.pop(key, None)
+                    cached_context = {"assignment": cached_context,}
+                    return cached_context
+                    # return await self._format_cached_context(cached_context[0].name)
             
             # 2. If not in cache or caching disabled, fetch from API
             print("Fetching context from API...")
@@ -48,9 +55,12 @@ class AssignmentContextManager:
                 print("Saving to cache...")
                 await self._save_to_cache(assignment_id, context)
             
-            # 4. Format and return
-            return self._format_context_for_llm(context)
-            
+            if context["assignment"]["rubrics"] is None:
+                print("Rubrics not found in assignment context.")
+                raise Exception("Rubrics missing in assignment context")
+
+            return context
+
         except Exception as e:
             error_msg = f"Error getting assignment context: {str(e)}"
             print(f"\nError: {error_msg}")
@@ -62,15 +72,10 @@ class AssignmentContextManager:
         try:
             # Construct API URL properly
             api_url = f"{self.settings.base_url.rstrip('/')}/{self.settings.assignment_context_endpoint.lstrip('/')}"
-            print(f"\nMaking API request to: {api_url}")
             
             payload = {
                 "assignment_id": assignment_id
             }
-            
-            print("\nRequest Details:")
-            print(f"Headers: {json.dumps({k: v if k != 'Authorization' else '[REDACTED]' for k, v in self.headers.items()}, indent=2)}")
-            print(f"Payload: {json.dumps(payload, indent=2)}")
             
             response = requests.post(
                 api_url,
@@ -79,7 +84,6 @@ class AssignmentContextManager:
                 timeout=30
             )
             
-            print(f"\nResponse Status: {response.status_code}")
             
             if response.status_code != 200:
                 error_msg = f"API request failed with status {response.status_code}: {response.text}"
@@ -189,88 +193,6 @@ class AssignmentContextManager:
             error_msg = f"Error saving to cache: {str(e)}"
             print(f"\nError: {error_msg}")
             frappe.db.rollback()  # Rollback on error
-            raise Exception(error_msg)
-
-    async def _format_cached_context(self, context_name: str) -> Dict:
-        """Format cached context for LLM"""
-        try:
-            context = frappe.get_doc("Assignment Context", context_name)
-            
-            # Parse learning objectives safely
-            learning_objectives = []
-            try:
-                if context.learning_objectives:
-                    learning_objectives = json.loads(context.learning_objectives)
-            except (json.JSONDecodeError, TypeError) as e:
-                print(f"Error parsing learning objectives: {str(e)}")
-                # Create an empty default if parsing fails
-                learning_objectives = []
-            
-            return {
-                "assignment": {
-                    "id": context.assignment_id,
-                    "name": context.assignment_name,
-                    "type": context.assignment_type,
-                    "description": context.description,
-                    "max_score": context.max_score,
-                    "reference_image": context.reference_image
-                },
-                "learning_objectives": learning_objectives,
-                "course_vertical": context.course_vertical,
-                "difficulty_level": context.difficulty_level
-            }
-            
-        except Exception as e:
-            error_msg = f"Error formatting cached context: {str(e)}"
-            print(f"\nError: {error_msg}")
-            raise Exception(error_msg)
-
-    def _format_context_for_llm(self, api_context: Dict) -> Dict:
-        """Format API context for LLM"""
-        try:
-            assignment = api_context["assignment"]
-            
-            # Determine course vertical
-            course_vertical = "General"
-            if "subject" in assignment and assignment["subject"]:
-                subject_parts = assignment["subject"].split("-")
-                if len(subject_parts) > 1:
-                    course_vertical = subject_parts[-1].strip()
-                    
-            # Parse assignment type correctly
-            assignment_type = assignment.get("type", "Practical")
-            valid_types = ["Written", "Practical", "Performance", "Collaborative"]
-            if not assignment_type or assignment_type not in valid_types:
-                assignment_type = "Practical"
-            
-            # Format learning objectives
-            learning_objectives = []
-            if "learning_objectives" in api_context and api_context["learning_objectives"]:
-                learning_objectives = [
-                    {
-                        "objective_id": obj.get("objective", "Unknown"),
-                        "description": obj.get("description", "").strip()
-                    }
-                    for obj in api_context["learning_objectives"]
-                ]
-            
-            return {
-                "assignment": {
-                    "id": assignment.get("name", ""),  # Using name as ID
-                    "name": assignment.get("name", ""),
-                    "type": assignment_type,
-                    "description": assignment.get("description", ""),
-                    "max_score": assignment.get("max_score", "100"),
-                    "reference_image": assignment.get("reference_image", "")
-                },
-                "learning_objectives": learning_objectives,
-                "course_vertical": course_vertical,
-                "difficulty_level": "Medium"  # Default value
-            }
-            
-        except Exception as e:
-            error_msg = f"Error formatting API context: {str(e)}"
-            print(f"\nError: {error_msg}")
             raise Exception(error_msg)
 
     async def refresh_cache(self, assignment_id: str) -> None:

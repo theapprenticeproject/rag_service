@@ -20,32 +20,12 @@ class FeedbackHandler:
         """Handle a new submission from plagiarism queue"""
         request_id = None
         try:
-            print("\n=== Processing New Submission ===")
-            print(f"Submission ID: {message_data.get('submission_id')}")
 
-
-            submission_id = message_data.get("submission_id")
-            is_plagiarized = message_data.get("is_plagiarized", False)
-            match_type = message_data.get("match_type", "original")
-            similarity_score = message_data.get("similarity_score", 0.0)
-            plagiarism_source = message_data.get("plagiarism_source", "none")
-            similar_sources = message_data.get("similar_sources", [])
-            is_ai_generated = message_data.get("is_ai_generated", False)
-            ai_detection_source = message_data.get("ai_detection_source", "unknown")
-            ai_confidence = message_data.get("ai_confidence", 0.0)
-
-            print(f"\nPlagiarism Check - ID: {submission_id}, \
-                        Plagiarized: {is_plagiarized}, Match Type: {match_type}, \
-                        Similarity Score: {similarity_score}, Source: {plagiarism_source}, \
-                        Similar Sources: {similar_sources}, \
-                        AI Generated: {is_ai_generated}, AI Confidence: {ai_confidence}")    
-            
             # Create or update feedback request
             request_id = await self.create_feedback_request(message_data)
             print(f"\nFeedback Request Created/Updated: {request_id}")
             
             # Get assignment context
-            print(f"\nFetching assignment context for: {message_data['assignment_id']}")
             assignment_context = await self.assignment_context_manager.get_assignment_context(
                 message_data["assignment_id"]
             )
@@ -128,8 +108,6 @@ class FeedbackHandler:
             
             # Explicitly commit the transaction
             frappe.db.commit()
-            
-            print(f"Feedback Request Created/Updated Successfully: {request_id}")
             return request_id
             
         except Exception as e:

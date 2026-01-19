@@ -23,7 +23,7 @@ class FeedbackProcessor:
             # Update document fields using db_set
             feedback_request.db_set('status', 'Completed', update_modified=True)
             feedback_request.db_set('generated_feedback', json.dumps(feedback, indent=2), update_modified=True)
-            feedback_request.db_set('feedback_summary', formatted_feedback, update_modified=True)
+            feedback_request.db_set('feedback_summary', feedback['overall_feedback'], update_modified=True)
             feedback_request.db_set('completed_at', datetime.now(), update_modified=True)
             feedback_request.db_set('model_used', model_used, update_modified=True)
             feedback_request.db_set('template_used', template_used, update_modified=True)
@@ -46,7 +46,7 @@ class FeedbackProcessor:
                 "student_id": feedback_request.student_id,
                 "assignment_id": feedback_request.assignment_id,
                 "feedback": feedback,
-                "summary": formatted_feedback,
+                "summary": feedback['overall_feedback'],
 
                 "is_plagiarized": feedback['plagiarism_output']['is_plagiarized'],
                 "is_ai_generated": feedback['plagiarism_output']['is_ai_generated'],
@@ -65,6 +65,9 @@ class FeedbackProcessor:
             self.queue_manager.send_feedback_to_tap(message)
             
             print(f"\nFeedback processed and sent for request: {request_id}")
+
+            print("Payload sent to TAP LMS queue:")
+            print(json.dumps(message, indent=2))
             
         except Exception as e:
             error_msg = f"Error processing feedback: {str(e)}"

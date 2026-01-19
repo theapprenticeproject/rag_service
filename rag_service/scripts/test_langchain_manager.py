@@ -4,7 +4,7 @@ import frappe
 import json
 from typing import Dict, List, Optional, Union
 from datetime import datetime
-from .llm_providers import create_llm_provider, OpenAIProvider
+from ..core.llm_providers import create_llm_provider, OpenAIProvider
 
 class LangChainManager:
     def __init__(self):
@@ -15,30 +15,44 @@ class LangChainManager:
     def setup_llm(self):
         """Initialize LLM based on settings"""
         try:
-            llm_settings = frappe.get_list(
-                "LLM Settings",
-                filters={"is_active": 1},
-                limit=1
-            )
+            # llm_settings = frappe.get_list(
+            #     "LLM Settings",
+            #     filters={"is_active": 1},
+            #     limit=1
+            # )
             
-            if not llm_settings:
-                raise Exception("No active LLM configuration found")
+            # if not llm_settings:
+            #     raise Exception("No active LLM configuration found")
                 
-            settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
-            self.model_used = llm_settings[0].name
-            print("\nUsing LLM Settings:")
-            print(f"Provider: {settings.provider}")
-            print(f"Model: {settings.model_name}")
-            
-            
-            # Create LLM provider based on settings
+            # settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
+            # self.model_used = llm_settings[0].name
+            # print("\nUsing LLM Settings:")
+            # print(f"Provider: {settings.provider}")
+            # print(f"Model: {settings.model_name}")
+
+            # # Create LLM provider based on settings
+            # self.llm_provider = create_llm_provider(
+            #     provider=settings.provider,
+            #     api_key=settings.get_password('api_secret'),
+            #     model_name=settings.model_name,
+            #     temperature=settings.temperature,
+            #     max_tokens=settings.max_tokens
+            # )
+
+            settings = {"name":"hv7j6uitvg","owner":"Administrator","creation":"2025-12-17 15:32:25.986861",
+                        "modified":"2025-12-17 15:32:25.986861","modified_by":"Administrator","docstatus":0,"idx":18,
+                        "provider":"OpenAI","model_name":"gpt-4o","temperature":0.7,"max_tokens":1500,"is_active":1,
+                        "is_default":0,
+                        "api_secret":"*****","doctype":"LLM Settings","__last_sync_on":"2026-01-16T04:56:38.776Z"}
+            self.model_used = settings["model_name"]
             self.llm_provider = create_llm_provider(
-                provider=settings.provider,
-                api_key=settings.get_password('api_secret'),
-                model_name=settings.model_name,
-                temperature=settings.temperature,
-                max_tokens=settings.max_tokens
+                provider=settings["provider"],
+                api_key=settings["api_secret"],
+                model_name=settings["model_name"],
+                temperature=settings["temperature"],
+                max_tokens=settings["max_tokens"]
             )
+            
             
             # Keep the llm reference for backward compatibility with OpenAI
             if isinstance(self.llm_provider, OpenAIProvider):
@@ -132,8 +146,8 @@ class LangChainManager:
                                         - Clear about achievement gaps and growth areas
 
                                         Structure your response by:
-                                        1. Evaluating the submission against each rubric skill
-                                        2. Assigning a single grade for each skill in the rubric []
+                                        1. Evaluating each rubric criterion against the submission
+                                        2. Assigning grades based on rubric descriptors
                                         3. Providing specific, actionable feedback
                                         4. Ending with motivating encouragement
 
@@ -156,7 +170,7 @@ class LangChainManager:
                                     {
                                         "rubric_evaluations": [
                                             {
-                                                "skill": "Skill Name",
+                                                "criterion": "criterion_name",
                                                 "grade_value": 1-5,
                                                 "observation": "specific evidence from submission"
                                             }
@@ -171,12 +185,12 @@ class LangChainManager:
                 self.response_format = """{
                                         "rubric_evaluations": [
                                             {
-                                            "skill": "Skill Name",
+                                            "criterion": "criterion_name",
                                             "grade_value": 2,
                                             "observation": "specific evidence from submission"
                                             },
                                             {
-                                            "skill": "Skill Name",
+                                            "criterion": "criterion_name",
                                             "grade_value": 2,
                                             "observation": "specific evidence from submission"
                                             }
@@ -222,12 +236,12 @@ class LangChainManager:
         return {
             "rubric_evaluations": [
                 {
-                "skill": "Skill Name",
+                "criterion": "criterion_name",
                 "grade_value": 2,
                 "observation": "specific evidence from submission"
                 },
                 {
-                "skill": "Skill Name",
+                "criterion": "criterion_name",
                 "grade_value": 2,
                 "observation": "specific evidence from submission"
                 }
@@ -246,7 +260,8 @@ class LangChainManager:
             print("\n=== Starting Universal Feedback Generation ===")
             
             # Get universal template (no assignment_type filtering)
-            template = self.get_universal_template()
+            # template = self.get_universal_template()
+            template = self.get_builtin_template() # FOR TESTING ONLY
             print("Template loaded successfully")
 
             # Get expected response format from template or use default
@@ -265,15 +280,15 @@ class LangChainManager:
             learning_objectives = self.format_objectives(assignment_context.get("learning_objectives", []))
             rubric_criteria = self.format_rubrics(assignment_context["assignment"].get("rubrics", {}))
 
-            print("User Prompt Context Prepared:")
-            print(json.dumps(assignment_context, indent=2))
-
-
+            
+            # SIMPLIFIED: Use template directly without complex modifications
+            # The universal template handles all subject types internally
+            
             # Format user prompt with assignment context
             user_prompt_vars = {
                 "assignment_name": assignment_context["assignment"].get("name", ""),
                 "assignment_description": assignment_context["assignment"].get("description", ""),
-                "course_vertical": assignment_context.get("subject", "General"),
+                "course_vertical": assignment_context.get("course_vertical", "General"),
                 # "assignment_type": assignment_context["assignment"].get("type", "Practical"),
                 "learning_objectives": learning_objectives,
                 "rubric_criteria": rubric_criteria
@@ -295,6 +310,10 @@ class LangChainManager:
                 user_prompt=formatted_user_prompt,
                 image_url=submission_url
             )
+
+            print(f"\nAssignment: {assignment_context['assignment'].get('name', 'Unknown')}")
+            print(f"Subject: {assignment_context.get('course_vertical', 'General')}")
+            print(f"Type: {assignment_context['assignment'].get('type', 'Unknown')}")
             print("\nSending request to LLM...")
             
             # Generate feedback - SINGLE LLM CALL (no separate validation)
@@ -304,6 +323,8 @@ class LangChainManager:
             try:
                 # Clean up the response text
                 cleaned_text = self.clean_json_response(raw_text)
+                print(f"\nCleaned Response Text: {cleaned_text}")
+                
                 feedback = json.loads(cleaned_text)
                 print("\nSuccessfully parsed JSON response")
                 
@@ -352,7 +373,6 @@ class LangChainManager:
             # Return structured error response
             template_used = "Built-in Universal Template for Error"
             return self.create_error_feedback(assignment_context), template_used
-
 
     async def generate_feedback( self, assignment_context: Dict, submission_url: str, submission_id: str,
                                     plagiarism_data: Dict = None, feedback_request_id: str = None) -> Dict:
@@ -406,13 +426,13 @@ class LangChainManager:
         if error_message:
             update_data["error_message"] = error_message[:500]  # Truncate long errors
 
-        frappe.db.set_value(
-            "Feedback Request",
-            feedback_request_id,
-            update_data,
-            update_modified=True
-        )
-        frappe.db.commit()
+        # frappe.db.set_value(
+        #     "Feedback Request",
+        #     feedback_request_id,
+        #     update_data,
+        #     update_modified=True
+        # )
+        # frappe.db.commit()
 
     def _create_ai_generated_feedback(self, plagiarism_data: Dict) -> Dict:
         """Create feedback for AI-generated submissions"""
