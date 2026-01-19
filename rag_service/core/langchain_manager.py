@@ -524,7 +524,7 @@ class LangChainManager:
             elif field == "rubric_evaluations":
                 fallback[field] = [
                 {
-                "criterion": "Content Knowledge",
+                "skill": "Content Knowledge",
                 "grade_value": 2,
                 "observation": "Neutral evaluation due to processing issue"
                 }
