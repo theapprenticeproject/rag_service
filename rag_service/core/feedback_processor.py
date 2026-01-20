@@ -33,21 +33,12 @@ class FeedbackProcessor:
             
             # Verify the update
             updated_doc = frappe.get_doc("Feedback Request", request_id)
-            print("\nVerification after update:")
-            print(f"Status: {updated_doc.status}")
-            print(f"Has Generated Feedback: {bool(updated_doc.generated_feedback)}")
-            print(f"Has Feedback Summary: {bool(updated_doc.feedback_summary)}")
-            print(f"Model Used: {updated_doc.model_used}")
-            print(f"Template Used: {updated_doc.template_used}")
-            
             # Prepare and send message to TAP LMS
             message = {
                 "submission_id": feedback_request.submission_id,
                 "student_id": feedback_request.student_id,
                 "assignment_id": feedback_request.assignment_id,
                 "feedback": feedback,
-                "summary": feedback['overall_feedback'],
-
                 "is_plagiarized": feedback['plagiarism_output']['is_plagiarized'],
                 "is_ai_generated": feedback['plagiarism_output']['is_ai_generated'],
                 "match_type": feedback['plagiarism_output']['match_type'],
@@ -57,8 +48,7 @@ class FeedbackProcessor:
                 "ai_confidence": feedback['plagiarism_output']['ai_confidence'],
 
                 "generated_at": feedback_request.completed_at.isoformat() if feedback_request.completed_at else datetime.now().isoformat(),
-                # "plagiarism_score": feedback_request.plagiarism_score,
-                # "similar_sources": json.loads(feedback_request.similar_sources or '[]')
+
             }
             
             # Send to TAP LMS queue
