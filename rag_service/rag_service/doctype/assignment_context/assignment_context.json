@@ -9,7 +9,7 @@
   "assignment_name",
   "course_vertical",
   "description",
-  "rubric",
+  "rubrics",
   "learning_objectives",
   "difficulty_level",
   "last_updated",
@@ -37,7 +37,7 @@
    "label": "Course Vertical"
   },
   {
-   "fieldname": "rubric",
+   "fieldname": "rubrics",
    "fieldtype": "Text",
    "label": "Rubric"
   },

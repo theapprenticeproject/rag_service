@@ -22,7 +22,7 @@ class FeedbackProcessor:
             print("\nUpdating Feedback Request fields...")
             # Update document fields using db_set
             feedback_request.db_set('status', 'Completed', update_modified=True)
-            feedback_request.db_set('generated_feedback', json.dumps(feedback, indent=2), update_modified=True)
+            feedback_request.db_set('generated_feedback', json.dumps(feedback, indent=2, ensure_ascii=False), update_modified=True)
             feedback_request.db_set('feedback_summary', feedback['overall_feedback'], update_modified=True)
             feedback_request.db_set('completed_at', datetime.now(), update_modified=True)
             feedback_request.db_set('model_used', model_used, update_modified=True)
@@ -39,13 +39,13 @@ class FeedbackProcessor:
                 "student_id": feedback_request.student_id,
                 "assignment_id": feedback_request.assignment_id,
                 "feedback": feedback,
-                "is_plagiarized": feedback['plagiarism_output']['is_plagiarized'],
-                "is_ai_generated": feedback['plagiarism_output']['is_ai_generated'],
-                "match_type": feedback['plagiarism_output']['match_type'],
-                "plagiarism_source": feedback['plagiarism_output']['plagiarism_source'],
-                "similarity_score": feedback['plagiarism_output']['similarity_score'],
-                "ai_detection_source": feedback['plagiarism_output']['ai_detection_source'],
-                "ai_confidence": feedback['plagiarism_output']['ai_confidence'],
+                # "is_plagiarized": feedback['plagiarism_output']['is_plagiarized'],
+                # "is_ai_generated": feedback['plagiarism_output']['is_ai_generated'],
+                # "match_type": feedback['plagiarism_output']['match_type'],
+                # "plagiarism_source": feedback['plagiarism_output']['plagiarism_source'],
+                # "similarity_score": feedback['plagiarism_output']['similarity_score'],
+                # "ai_detection_source": feedback['plagiarism_output']['ai_detection_source'],
+                # "ai_confidence": feedback['plagiarism_output']['ai_confidence'],
 
                 "generated_at": feedback_request.completed_at.isoformat() if feedback_request.completed_at else datetime.now().isoformat(),
 
@@ -57,7 +57,7 @@ class FeedbackProcessor:
             print(f"\nFeedback processed and sent for request: {request_id}")
 
             print("Payload sent to TAP LMS queue:")
-            print(json.dumps(message, indent=2))
+            print(json.dumps(message, indent=2, ensure_ascii=False))
             
         except Exception as e:
             error_msg = f"Error processing feedback: {str(e)}"

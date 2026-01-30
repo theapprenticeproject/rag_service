@@ -27,7 +27,7 @@ class FeedbackHandler:
             
             # Get assignment context
             assignment_context = await self.assignment_context_manager.get_assignment_context(
-                message_data["assignment_id"]
+                message_data["assignment_id"], message_data["student_id"]
             )
             
             if not assignment_context:
@@ -174,40 +174,6 @@ class FeedbackHandler:
                 "request_id": request_id,
                 "status": "Unknown"
             }
-
-    async def retry_failed_request(self, request_id: str) -> None:
-        """Retry a failed feedback request"""
-        try:
-            print(f"\n=== Retrying Failed Request: {request_id} ===")
-            
-            feedback_request = frappe.get_doc("Feedback Request", request_id)
-            
-            if feedback_request.status != "Failed":
-                raise ValueError(f"Request {request_id} is not in failed state")
-            
-            if feedback_request.processing_attempts >= 3:
-                raise ValueError(f"Maximum retry attempts reached for request {request_id}")
-            
-            # Prepare message data for reprocessing
-            message_data = {
-                "submission_id": feedback_request.submission_id,
-                "student_id": feedback_request.student_id,
-                "assignment_id": feedback_request.assignment_id,
-                "img_url": feedback_request.submission_content,
-                "plagiarism_score": feedback_request.plagiarism_score,
-                "similar_sources": json.loads(feedback_request.similar_sources or '[]')
-            }
-            
-            # Process the request again
-            await self.handle_submission(message_data)
-            
-            print(f"Request {request_id} retried successfully")
-            
-        except Exception as e:
-            error_msg = f"Error retrying request: {str(e)}"
-            print(f"\nError: {error_msg}")
-            frappe.log_error(error_msg, "Request Retry Error")
-            raise
 
     async def cleanup_old_requests(self, days: int = 30) -> None:
         """Clean up old completed requests"""

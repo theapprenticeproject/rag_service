@@ -87,7 +87,7 @@ class LangChainManager:
     def get_universal_template(self) -> Dict:
         """Get any active template - no assignment_type filtering"""
         try:
-            print("\n=== Getting Universal Template ===")
+            print("\n=== Getting Prompt Template ===")
             
             # REMOVED: assignment_type filtering - get ANY active template
             templates = frappe.get_list(
@@ -122,51 +122,68 @@ class LangChainManager:
             def __init__(self):
                 self.template_name = "Built-in Universal Template"
                 self.system_prompt = """You are an encouraging, knowledgeable educational assistant that provides constructive feedback on student submissions using a structured rubric-based evaluation.
-                                        EVALUATION GUIDELINES: Assess submissions against the provided rubric criteria. For each criterion, determine the appropriate grade level (1-5 scale) based on the rubric descriptions provided.
-                                        CRITICAL: It is crucial that the image looks like a photo clicked by a student using a mobile camera. It shouldn't be a digitally created image or one sourced from the internet. Grade it accordingly.
+                                EVALUATION GUIDELINES: Assess submissions against the provided rubric criteria. For each criterion, determine the appropriate grade level (1-5 scale) based on the rubric descriptions provided. Prioritize growth recognition over perfection.
 
-                                        Always provide feedback that is:
-                                        - Encouraging and positive while being constructive
-                                        - Age-appropriate and specific to observations
-                                        - Directly aligned with rubric criteria
-                                        - Clear about achievement gaps and growth areas
+                                GRADING PHILOSOPHY:
+                                - Credit partial mastery: A student showing 60% competency deserves acknowledgment of that progress. Grades need not be binary (good/bad).
+                                - Growth mindset framing: Every submission represents learning in progress. Frame gaps as natural and achievable, not deficiencies.
+                                - Reserve lower grades (1-2) only for minimal engagement or complete absence of skill demonstration
+                                - Lean toward higher grades when effort and authenticity are evident
 
-                                        Structure your response by:
-                                        1. Evaluating the submission against each rubric skill
-                                        2. Assigning a single grade for each skill in the rubric []
-                                        3. Providing specific, actionable feedback
-                                        4. Ending with motivating encouragement
 
-                                        CRITICAL: You must respond with valid JSON format only."""
+                                Always provide feedback that is:
+                                - Encouraging and positive while being constructive
+                                - Age-appropriate and specific to observations
+                                - Directly aligned with rubric criteria
+                                - Clear about achievement gaps and growth areas
+
+                                Structure your response by:
+                                1. Opening with what the student did well (be specific)
+                                2. Evaluating the submission against each rubric skill
+                                3. Assigning a single grade for each skill in the rubric criteria
+                                4. Evaluating only the skills mentioned in the rubric criteria
+                                5. Providing specific, actionable feedback for growth
+                                6. Ending with motivating encouragement
+                                7. Translate the overall_feedback. Translation rules: 
+                                    - Formal but friendly tone (customer communication).
+                                    - Natural, conversational phrasing. Not literal translation.
+                                    - Use native script for the language.
+
+                                CRITICAL: You must respond with valid JSON format only. 
+                                """
 
                 self.user_prompt = """Assignment Context:
-                                    - Name: {assignment_name}
-                                    - Subject: {course_vertical}
-                                    - Type: {assignment_type}
-                                    - Description: {assignment_description}
+                            - Name: {assignment_name}
+                            - Subject: {course_vertical}
+                            - Type: {assignment_type}
+                            - Description: {assignment_description}
 
-                                    Learning Objectives: {learning_objectives}
+                            Learning Objectives: {learning_objectives}
 
-                                    Rubric Criteria: {rubric_criteria}
+                            Rubric Criteria: {rubric_criteria}
 
-                                    CRITICAL: It is crucial that the image looks like a photo clicked by a student using a mobile camera. It shouldn't be a digitally created image or one sourced from the internet. Grade it accordingly.
+                            CRITICAL: It is crucial that the image looks like a photo clicked by a student using a mobile camera. It shouldn't be a digitally created image or one sourced from the internet. Grade it accordingly.
 
-                                    Analyze this submission and respond ONLY in this JSON format:
+                            Analyze this submission and respond ONLY in this JSON format:
 
+                            {
+                                "rubric_evaluations": [
                                     {
-                                        "rubric_evaluations": [
-                                            {
-                                                "skill": "Skill Name",
-                                                "grade_value": 1-5,
-                                                "observation": "specific evidence from submission"
-                                            }
-                                        ],
-                                        "overall_feedback": "30-50 words of constructive, encouraging feedback or 'Submission does not match assignment requirements.'",
-                                        "strengths": ["specific strength 1", "specific strength 2"],
-                                        "areas_for_improvement": ["actionable suggestion 1", "actionable suggestion 2"],
-                                        "final_grade": "average of all rubric grades (0-5 scale, converted to 0-100)",
-                                        "encouragement": "motivating closing statement"
-                                    }"""
+                                        "Skill": "Skill Name",
+                                        "grade_value": 1-5,
+                                        "observation": "specific evidence from submission"
+                                    }
+                                ],
+                                "strengths": ["specific strength 1", "specific strength 2"],
+                                "areas_for_improvement": ["actionable suggestion 1", "actionable suggestion 2"],
+                                "encouragement": "motivating closing statement",
+                                "overall_feedback": "30-50 words of encouraging feedback addressing the student in a friendly tone that summarises strengths and improvement potential. Or 'Submission does not match assignment requirements.'",
+                                "overall_feedback_translated": "Translation of overall_feedback in {Language} for a Grade {Grade_Level} student as per translation rules.",
+                                "learning_objectives_feedback": ["Feedback on objective 1",],
+                                "final_grade": "average of all rubric grades (0-5 scale, converted to 0-100)"
+                                
+                            }
+                            """
 
                 self.response_format = """{
                                         "rubric_evaluations": [
@@ -181,12 +198,13 @@ class LangChainManager:
                                             "observation": "specific evidence from submission"
                                             }
                                         ],
-                                        "overall_feedback": "Overall assessment of the submission",
                                         "strengths": ["Strength 1", "Strength 2", "Strength 3"],
                                         "areas_for_improvement": ["Area 1", "Area 2"],
-                                        "learning_objectives_feedback": ["Feedback on objective 1"],
-                                        "grade_recommendation": 75,
-                                        "encouragement": "Encouraging message for the student"
+                                        "encouragement": "Encouraging message for the student",
+                                        "overall_feedback": "Overall assessment of the submission",
+                                        "overall_feedback_translated": "Translation of overall_feedback.",
+                                        "learning_objectives_feedback": ["Feedback on objective 1",],
+                                        "final_grade": 75,
                                         }
                                     """
         
@@ -207,8 +225,10 @@ class LangChainManager:
         
         return "\n".join(formatted)
 
-    def format_rubrics(self, rubrics: Dict) -> str:
+    def format_rubrics(self, rubrics) -> str:
         prompt = ""
+        if isinstance(rubrics, str):
+            rubrics = json.loads(rubrics)
         for criterion, grades_list in rubrics.items():
             prompt += f"\n{criterion}:\n"
             for grade_item in grades_list:
@@ -216,34 +236,34 @@ class LangChainManager:
         
         return prompt
     
-
     def get_default_response_format(self) -> Dict:
         """Get default response format"""
         return {
-            "rubric_evaluations": [
-                {
-                "skill": "Skill Name",
-                "grade_value": 2,
-                "observation": "specific evidence from submission"
-                },
-                {
-                "skill": "Skill Name",
-                "grade_value": 2,
-                "observation": "specific evidence from submission"
+                "rubric_evaluations": [
+                    {
+                    "skill": "Skill Name",
+                    "grade_value": 2,
+                    "observation": "specific evidence from submission"
+                    },
+                    {
+                    "skill": "Skill Name",
+                    "grade_value": 2,
+                    "observation": "specific evidence from submission"
+                    }
+                ],
+                "strengths": ["Strength 1", "Strength 2", "Strength 3"],
+                "areas_for_improvement": ["Area 1", "Area 2"],
+                "encouragement": "Encouraging message for the student",
+                "overall_feedback": "Overall assessment of the submission",
+                "overall_feedback_translated": "Translation of overall_feedback.",
+                "learning_objectives_feedback": ["Feedback on objective 1"],
+                "final_grade": 75
                 }
-            ],
-            "overall_feedback": "Overall assessment of the submission",
-            "strengths": ["Strength 1", "Strength 2", "Strength 3"],
-            "areas_for_improvement": ["Area 1", "Area 2"],
-            "learning_objectives_feedback": ["Feedback on objective 1"],
-            "grade_recommendation": 75,
-            "encouragement": "Encouraging message for the student"
-        }
-
+    
     async def generate_ai_evaluated_feedback(self, assignment_context: Dict, submission_url: str, submission_id: str) -> Dict:
         """Generate feedback using universal template approach"""
         try:
-            print("\n=== Starting Universal Feedback Generation ===")
+            print("\n=== Starting AI Feedback Generation ===")
             
             # Get universal template (no assignment_type filtering)
             template = self.get_universal_template()
@@ -263,20 +283,18 @@ class LangChainManager:
 
             # Format learning objectives
             learning_objectives = self.format_objectives(assignment_context.get("learning_objectives", []))
-            rubric_criteria = self.format_rubrics(assignment_context["assignment"].get("rubrics", {}))
-
-            print("User Prompt Context Prepared:")
-            print(json.dumps(assignment_context, indent=2))
-
+            rubric_criteria = self.format_rubrics(assignment_context["assignment"].get("rubrics", ""))
 
             # Format user prompt with assignment context
             user_prompt_vars = {
                 "assignment_name": assignment_context["assignment"].get("name", ""),
                 "assignment_description": assignment_context["assignment"].get("description", ""),
                 "course_vertical": assignment_context.get("subject", "General"),
-                # "assignment_type": assignment_context["assignment"].get("type", "Practical"),
+                "assignment_type": assignment_context["assignment"].get("type", "Practical"),
                 "learning_objectives": learning_objectives,
-                "rubric_criteria": rubric_criteria
+                "rubric_criteria": rubric_criteria,
+                "Language": assignment_context["student"].get("language", "English"),
+                "Grade_Level": assignment_context["student"].get("grade", "1")
             }
             
             # Format the user prompt with available variables
@@ -289,6 +307,9 @@ class LangChainManager:
             # Use template system prompt as-is (it already handles JSON requirement)
             system_prompt = template.system_prompt
 
+            print("User Prompt Prepared:")
+            print(formatted_user_prompt)
+
             # Prepare messages for the LLM provider
             messages = self.llm_provider.format_messages(
                 system_prompt=system_prompt,
@@ -297,11 +318,10 @@ class LangChainManager:
             )
             print("\nSending request to LLM...")
             
-            # Generate feedback - SINGLE LLM CALL (no separate validation)
-            raw_text = await self.llm_provider.generate_with_vision(messages)
-            print(f"\nRaw LLM Response: {raw_text}")
-
             try:
+                # Generate feedback - SINGLE LLM CALL (no separate validation)
+                raw_text = await self.llm_provider.generate_with_vision(messages)
+                print(f"\nRaw LLM Response: {raw_text}")
                 # Clean up the response text
                 cleaned_text = self.clean_json_response(raw_text)
                 feedback = json.loads(cleaned_text)
@@ -315,7 +335,7 @@ class LangChainManager:
                 print("Using fallback feedback format")
                 
                 # Create structured fallback response
-                feedback = self.create_fallback_feedback(assignment_context, expected_format)
+                feedback = self.create_fallback_feedback(expected_format)
 
             # Attach default plagiarism/AI-detection metadata
             plagiarism_output = {
@@ -351,8 +371,7 @@ class LangChainManager:
             
             # Return structured error response
             template_used = "Built-in Universal Template for Error"
-            return self.create_error_feedback(assignment_context), template_used
-
+            return self.create_error_feedback(), template_used
 
     async def generate_feedback( self, assignment_context: Dict, submission_url: str, submission_id: str,
                                     plagiarism_data: Dict = None, feedback_request_id: str = None) -> Dict:
@@ -366,7 +385,6 @@ class LangChainManager:
                 is_plagiarized = plagiarism_data.get("is_plagiarized", False)
                 is_ai_generated = plagiarism_data.get("is_ai_generated", False)
                 match_type = plagiarism_data.get("match_type", "original")
-                plagiarism_source = plagiarism_data.get("plagiarism_source", "none")
 
                 # Handle AI-generated submissions
                 if is_ai_generated:
@@ -388,7 +406,8 @@ class LangChainManager:
                 else:
                     result_status = "Success - Original"
                     feedback, tempalate_used = await self.generate_ai_evaluated_feedback(assignment_context, submission_url,submission_id)
-
+            
+            feedback["translation_language"] = assignment_context["student"].get("language", "English")
             await self._update_result_status(feedback_request_id, result_status)
             return feedback, self.model_used, tempalate_used
 
@@ -420,18 +439,27 @@ class LangChainManager:
         ai_source = plagiarism_data.get("ai_detection_source", "unknown")
         ai_confidence = plagiarism_data.get("ai_confidence", 0.0)
         response = {
-            "overall_feedback": f"Your submission appears to be generated by an \
-            AI tool (detected source: {ai_source}, confidence: {ai_confidence:.0%}). \
+            "overall_feedback": "Your submission appears to be generated by an AI tool. \
             At MentorMe, we encourage original creative work that reflects your own learning \
             and artistic development. AI-generated images, while interesting, don't demonstrate \
             the skills and creativity we're looking to nurture. Please submit your own original \
             artwork for this assignment.",
-            "strengths": ["N/A - AI-generated content detected"],
+            "overall_feedback_translated": "Your submission appears to be generated by an AI tool. \
+            At MentorMe, we encourage original creative work that reflects your own learning \
+            and artistic development. AI-generated images, while interesting, don't demonstrate \
+            the skills and creativity we're looking to nurture. Please submit your own original \
+            artwork for this assignment.",
+            "strengths": ["N/A - AI-generated content detected."],
             "areas_for_improvement": ["Submit original artwork created by you",
                                       "Review assignment guidelines for creative direction"],
-            "learning_objectives_feedback": ["Unable to assess - submission flagged as AI-generated"],
+            "learning_objectives_feedback": ["N/A - AI-generated content detected."],
             "grade_recommendation": 0,
             "encouragement": "We believe in your creative abilities!",
+            "rubric_evaluations": [{
+                                        "Skill": "Content Knowledge",
+                                        "grade_value": 0,
+                                        "observation": "N/A - AI-generated content detected."
+                                    }],
             "plagiarism_output": {
                 "is_plagiarized": False,
                 "is_ai_generated": True,
@@ -445,7 +473,6 @@ class LangChainManager:
 
         return response
 
-
     def _create_plagiarism_feedback( self, plagiarism_data: Dict) -> Dict:
         """Create feedback for plagiarized submissions"""
 
@@ -456,16 +483,23 @@ class LangChainManager:
 
         # respond with structured feedback
         response = {
-            "overall_feedback": f"Your submission has been flagged for similarity \
-                (similarity: {similarity_score:.0%}, source: {plagiarism_source}).\
+            "overall_feedback": "Your submission has been flagged for similarity. \
+                Academic integrity is fundamental to the learning process. Please ensure your \
+                submissions represent your own original work.",
+            "overall_feedback_translated": "Your submission has been flagged for similarity. \
                 Academic integrity is fundamental to the learning process. Please ensure your \
                 submissions represent your own original work.",
             "strengths": ["N/A - Submission flagged for similarity"],
             "areas_for_improvement": ["Create original artwork for this assignment",
                                       "Review academic integrity guidelines"],
-            "learning_objectives_feedback": ["Unable to assess - submission flagged for similarity"],
+            "learning_objectives_feedback": ["N/A - Submission flagged for similarity"],
             "grade_recommendation": 0,
             "encouragement": "Every artist develops their unique style through practice!",
+            "rubric_evaluations": [{
+                                        "Skill": "Content Knowledge",
+                                        "grade_value": 0,
+                                        "observation": "N/A - Submission flagged for similarity."
+                                    }],
             "plagiarism_output": {
                 "is_plagiarized": True,
                 "is_ai_generated": False,
@@ -478,7 +512,6 @@ class LangChainManager:
         }
 
         return response 
-
 
     def validate_feedback_structure(self, feedback: Dict, expected_format: Dict) -> Dict:
         """Ensure feedback has all required fields with correct types"""
@@ -511,14 +544,15 @@ class LangChainManager:
         
         return feedback
 
-    def create_fallback_feedback(self, assignment_context: Dict, expected_format: Dict) -> Dict:
+    def create_fallback_feedback(self, expected_format: Dict) -> Dict:
         """Create structured fallback when JSON parsing fails"""
-        assignment_name = assignment_context["assignment"].get("name", "this assignment")
         
         fallback = {}
         for field, default_value in expected_format.items():
             if field == "overall_feedback":
-                fallback[field] = f"I encountered a formatting issue while processing your submission for {assignment_name}. This appears to be a technical problem on our end. Please try resubmitting if this issue persists."
+                fallback[field] = "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor."
+            elif field == "overall_feedback_translated":
+                fallback[field] = "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor."
             elif field == "grade_recommendation":
                 fallback[field] = 50  # Neutral grade for technical issues
             elif field == "rubric_evaluations":
@@ -544,65 +578,34 @@ class LangChainManager:
         
         return fallback
 
-    def create_error_feedback(self, assignment_context: Dict) -> Dict:
+    def create_error_feedback(self) -> Dict:
         """Create feedback for system errors"""
-        assignment_name = assignment_context["assignment"].get("name", "this assignment")
-        
-        return {
-            "overall_feedback": f"I encountered a system error while processing your submission for {assignment_name}. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor.",
+
+        feedback = {
+            "overall_feedback": "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor.",
+            "overall_feedback_translated": "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor.",
             "strengths": ["Your submission was received successfully"],
             "areas_for_improvement": ["No issues identified with your submission - this appears to be a technical problem"],
             "learning_objectives_feedback": ["Unable to evaluate due to system error - please resubmit"],
             "grade_recommendation": 0,
-            "encouragement": "Technical issues don't reflect your effort or ability - please try again!"
+            "encouragement": "Technical issues don't reflect your effort or ability - please try again!",
+            "rubric_evaluations": [{
+                                        "Skill": "Content Knowledge",
+                                        "grade_value": 2,
+                                        "observation": "Neutral evaluation due to processing issue"
+                                    }],
         }
+        plagiarism_output = {
+                "is_plagiarized": False,
+                "is_ai_generated": False,
+                "match_type": "original",
+                "plagiarism_source": "none",
+                "similarity_score": 0.0,
+                "ai_detection_source": "none",
+                "ai_confidence": 0.0,
+                "similar_sources": []
+            }
+        feedback["plagiarism_output"] = plagiarism_output
+        
+        return feedback
 
-    @staticmethod
-    def format_feedback_for_display(feedback: Dict) -> str:
-        """Format feedback for human-readable display"""
-        try:
-            formatted = []
-            
-            if "overall_feedback" in feedback:
-                formatted.append("Overall Feedback:")
-                formatted.append(feedback["overall_feedback"])
-            
-            if "strengths" in feedback:
-                formatted.append("\nStrengths:")
-                for strength in feedback["strengths"]:
-                    formatted.append(f"- {strength}")
-                    
-            if "areas_for_improvement" in feedback:
-                formatted.append("\nAreas for Improvement:")
-                for area in feedback["areas_for_improvement"]:
-                    formatted.append(f"- {area}")
-                    
-            if "learning_objectives_feedback" in feedback:
-                formatted.append("\nLearning Objectives Feedback:")
-                for obj in feedback["learning_objectives_feedback"]:
-                    formatted.append(f"- {obj}")
-                    
-            if "grade_recommendation" in feedback:
-                formatted.append(f"\nGrade Recommendation: {feedback['grade_recommendation']}")
-                
-            if "encouragement" in feedback:
-                formatted.append(f"\nEncouragement: {feedback['encouragement']}")
-            
-            return "\n".join(formatted)
-            
-        except Exception as e:
-            error_msg = f"Error formatting feedback: {str(e)}"
-            print(f"\nError: {error_msg}")
-            return "Error formatting feedback for display. Please check the JSON feedback data."
-
-    def get_current_config(self) -> Dict:
-        """Get current LLM configuration"""
-        if not self.llm_provider:
-            return {"status": "not_configured"}
-            
-        return {
-            "provider": self.llm_provider.__class__.__name__,
-            "model": self.llm_provider.model_name,
-            "temperature": self.llm_provider.temperature,
-            "max_tokens": self.llm_provider.max_tokens
-        }

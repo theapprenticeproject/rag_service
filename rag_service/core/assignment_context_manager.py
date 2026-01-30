@@ -19,12 +19,12 @@ class AssignmentContextManager:
         print("\nInitialized AssignmentContextManager")
         print(f"Using API Endpoint: {self.settings.base_url.rstrip('/')}/{self.settings.assignment_context_endpoint.lstrip('/')}")
 
-    async def get_assignment_context(self, assignment_id: str) -> Dict:
+    async def get_assignment_context(self, assignment_id: str, student_id: str) -> Dict:
         """Get assignment context from cache or API"""
         try:
             print(f"\n=== Getting Assignment Context for: {assignment_id} ===")
             
-            # 1. Check cache if enabled
+            # Check cache if enabled
             if self.settings.enable_caching:
                 cached_context = frappe.get_list(
                     "Assignment Context",
@@ -34,7 +34,8 @@ class AssignmentContextManager:
                     },
                     limit=1
                 )
-                
+
+                context = None
                 if cached_context:
                     print("Found cached context")
                     cached_context = frappe.get_doc("Assignment Context", cached_context[0].name).as_dict()
@@ -42,23 +43,35 @@ class AssignmentContextManager:
                     for key in list(cached_context.keys()):
                         if isinstance(cached_context[key], datetime):
                             cached_context.pop(key, None)
-                    cached_context = {"assignment": cached_context,}
-                    return cached_context
-                    # return await self._format_cached_context(cached_context[0].name)
-            
-            # 2. If not in cache or caching disabled, fetch from API
-            print("Fetching context from API...")
-            context = await self._fetch_from_api(assignment_id)
-            
-            # 3. Save to cache if enabled
-            if self.settings.enable_caching:
-                print("Saving to cache...")
-                await self._save_to_cache(assignment_id, context)
-            
-            if context["assignment"]["rubrics"] is None:
-                print("Rubrics not found in assignment context.")
-                raise Exception("Rubrics missing in assignment context")
+                    context = {"assignment": cached_context,}
 
+            if not context:
+                # If not in cache or caching disabled, fetch from API
+                print("Fetching context from API...")
+                context = await self._fetch_assignment_from_api(assignment_id)
+
+                # Save to cache if enabled
+                if self.settings.enable_caching:
+                    print("Saving to cache...")
+                    await self._save_to_cache(assignment_id, context)
+                
+                if context["assignment"]["rubrics"] is None:
+                    print("Rubrics not found in assignment context.")
+                    raise Exception("Rubrics missing in assignment context")
+        
+            if student_id is None:
+                raise Exception("Student ID is required to fetch student context")
+            
+            student_details = await self._fetch_student_from_api(student_id)
+            # student_details = {
+            #                 "student_id":"ST0001",    
+            #                 "grade":"6",
+            #                 "level":"2",
+            #                 "language": "Hindi"
+            #             }
+            context["student"] = {**student_details}
+
+            print("Assignment context",context)
             return context
 
         except Exception as e:
@@ -67,7 +80,7 @@ class AssignmentContextManager:
             frappe.log_error(error_msg, "Assignment Context Error")
             raise
 
-    async def _fetch_from_api(self, assignment_id: str) -> Dict:
+    async def _fetch_assignment_from_api(self, assignment_id: str) -> Dict:
         """Fetch assignment context from TAP LMS API"""
         try:
             # Construct API URL properly
@@ -76,14 +89,12 @@ class AssignmentContextManager:
             payload = {
                 "assignment_id": assignment_id
             }
-            
             response = requests.post(
                 api_url,
                 headers=self.headers,
                 json=payload,
                 timeout=30
             )
-            
             
             if response.status_code != 200:
                 error_msg = f"API request failed with status {response.status_code}: {response.text}"
@@ -95,6 +106,39 @@ class AssignmentContextManager:
                 raise Exception("Invalid API response format")
             
             print("API request successful")
+            return data["message"]
+            
+        except requests.RequestException as e:
+            error_msg = f"API request failed: {str(e)}"
+            print(f"\nError: {error_msg}")
+            raise Exception(error_msg)
+
+    async def _fetch_student_from_api(self, student_id: str) -> Dict:
+        """Fetch student details from TAP LMS API"""
+        try:
+            # Construct API URL properly
+            api_url = f"{self.settings.base_url.rstrip('/')}/{self.settings.student_context_endpoint.lstrip('/')}"
+            
+            payload = {
+                "student_id": student_id
+            }
+            response = requests.post(
+                api_url,
+                headers=self.headers,
+                json=payload,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                error_msg = f"API request failed with status {response.status_code}: {response.text}"
+                print(f"Error: {error_msg}")
+                raise Exception(error_msg)
+            
+            data = response.json()
+            if "message" not in data:
+                raise Exception("Invalid API response format")
+            
+            print("Student API request successful")
             return data["message"]
             
         except requests.RequestException as e:
@@ -161,7 +205,8 @@ class AssignmentContextManager:
                     "last_updated": now_datetime(),
                     "cache_valid_till": cache_valid_till,
                     "last_sync_status": "Success",
-                    "version": (doc.version or 0) + 1
+                    "version": (doc.version or 0) + 1,
+                    "rubrics": json.dumps(assignment.get("rubrics", {}))
                 })
                 doc.save()
                 print(f"Updated existing cache for assignment {assignment_id}")
@@ -181,7 +226,8 @@ class AssignmentContextManager:
                     "last_updated": now_datetime(),
                     "cache_valid_till": cache_valid_till,
                     "last_sync_status": "Success",
-                    "version": 1
+                    "version": 1,
+                    "rubrics": json.dumps(assignment.get("rubrics", {}))
                 })
                 doc.insert()
                 print(f"Created new cache for assignment {assignment_id}")
@@ -201,7 +247,7 @@ class AssignmentContextManager:
             print(f"\n=== Refreshing Cache for Assignment: {assignment_id} ===")
             
             # Force fetch from API
-            context = await self._fetch_from_api(assignment_id)
+            context = await self._fetch_assignment_from_api(assignment_id)
             
             # Save to cache
             await self._save_to_cache(assignment_id, context)
@@ -212,29 +258,3 @@ class AssignmentContextManager:
             error_msg = f"Error refreshing cache: {str(e)}"
             print(f"\nError: {error_msg}")
             raise Exception(error_msg)
-
-    def verify_settings(self) -> Dict:
-        """Verify RAG Settings configuration"""
-        try:
-            results = {
-                "base_url": bool(self.settings.base_url),
-                "api_key": bool(self.settings.api_key),
-                "api_secret": bool(self.settings.get_password('api_secret')),
-                "endpoints": bool(self.settings.assignment_context_endpoint),
-                "cache_config": bool(self.settings.cache_duration_days is not None)
-            }
-            
-            missing = [k for k, v in results.items() if not v]
-            
-            return {
-                "status": "Valid" if not missing else "Invalid",
-                "missing_settings": missing,
-                "cache_enabled": self.settings.enable_caching,
-                "cache_duration": self.settings.cache_duration_days
-            }
-            
-        except Exception as e:
-            return {
-                "status": "Error",
-                "error": str(e)
-            }

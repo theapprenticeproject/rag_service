@@ -77,7 +77,7 @@ class QueueManager:
             self.channel.basic_publish(
                 exchange='',
                 routing_key=self.settings.feedback_results_queue,
-                body=json.dumps(message),
+                body=json.dumps(message, ensure_ascii=False),
                 properties=pika.BasicProperties(
                     delivery_mode=2,  # make message persistent
                     content_type='application/json'
