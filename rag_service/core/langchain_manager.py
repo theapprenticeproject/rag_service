@@ -483,7 +483,7 @@ class LangChainManager:
 
         # respond with structured feedback
         response = {
-            "overall_feedback": "Your submission has been flagged for similarity. \
+            "overall_feedback": "Your submission has been flagged for similarity with another submission. \
                 Academic integrity is fundamental to the learning process. Please ensure your \
                 submissions represent your own original work.",
             "overall_feedback_translated": "Your submission has been flagged for similarity. \

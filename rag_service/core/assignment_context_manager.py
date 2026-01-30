@@ -23,6 +23,8 @@ class AssignmentContextManager:
         """Get assignment context from cache or API"""
         try:
             print(f"\n=== Getting Assignment Context for: {assignment_id} ===")
+
+            context = None
             
             # Check cache if enabled
             if self.settings.enable_caching:
@@ -34,8 +36,7 @@ class AssignmentContextManager:
                     },
                     limit=1
                 )
-
-                context = None
+                
                 if cached_context:
                     print("Found cached context")
                     cached_context = frappe.get_doc("Assignment Context", cached_context[0].name).as_dict()
