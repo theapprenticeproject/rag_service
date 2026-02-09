@@ -8,7 +8,7 @@
   "model_name",
   "location",
   "project_id",
-  "service_account_key_path",
+  "credentials_json",
   "temperature",
   "max_tokens",
   "is_active",
@@ -33,10 +33,12 @@
    "label": "Project ID"
   },
   {
-   "fieldname": "service_account_key_path",
-   "fieldtype": "Data",
-   "label": "Service Account Key Path",
-   "length": 300
+   "fieldname": "credentials_json",
+   "fieldtype": "Code",
+   "in_list_view": 1,
+   "label": "Service Account Credentials (JSON)",
+   "options": "JSON",
+   "reqd": 1
   },
   {
    "default": "0",

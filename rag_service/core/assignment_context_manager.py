@@ -72,7 +72,7 @@ class AssignmentContextManager:
             #             }
             context["student"] = {**student_details}
 
-            print("Assignment context",context)
+            # print("Assignment context",context)
             return context
 
         except Exception as e:
@@ -137,6 +137,7 @@ class AssignmentContextManager:
             
             data = response.json()
             if "message" not in data:
+                print(f"Error: Invalid API response format: {data}")
                 raise Exception("Invalid API response format")
             
             print("Student API request successful")

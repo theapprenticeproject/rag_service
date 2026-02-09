@@ -1,19 +1,19 @@
 # rag_service/rag_service/feedback_utils/video_evaluation.py
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import frappe
 
-from .evaluation_generation import BaseEvaluationGenerator
-from .llm_providers import create_llm_provider
+from .evaluation_generation import EvaluationGenerator
+from ..core.llm_providers import create_llm_provider
 
 
-class VideoEvaluationGenerator(BaseEvaluationGenerator):
+class VideoEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for video submissions."""
 
     def _resolve_service_account_credentials(self, settings: Any) -> Optional[Dict]:
-        raw_key = settings.get("service_account_key_path")
+        raw_key = settings.get("credentials_json")
 
         if isinstance(raw_key, dict):
             return raw_key

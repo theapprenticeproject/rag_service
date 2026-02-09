@@ -6,11 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 import frappe
 
-from .image_evaluation import ImageEvaluationGenerator
-from .video_evaluation import VideoEvaluationGenerator
-
-
-class BaseEvaluationGenerator:
+class EvaluationGenerator:
     """Shared evaluation generation utilities for different media types."""
 
     IMAGE_EXTENSIONS = {
@@ -336,23 +332,19 @@ class BaseEvaluationGenerator:
             pass
         return "Built-in Universal Template"
 
-
-class EvaluationGenerator(BaseEvaluationGenerator):
-    """Generate AI feedback for different media types."""
-
-    def __init__(self, feedback_service: Any):
-        super().__init__(feedback_service)
-        self.image_generator = ImageEvaluationGenerator(feedback_service)
-        self.video_generator = VideoEvaluationGenerator(feedback_service)
-
     async def generate_ai_feedback(
         self, assignment_context: Dict, submission_url: str, submission_id: str
     ) -> Tuple[Dict, str, str]:
         media_type = self.detect_media_type(submission_url)
         if media_type == "video":
-            return await self.video_generator.generate_feedback(
+            from .video_evaluation import VideoEvaluationGenerator
+
+            return await VideoEvaluationGenerator(self.feedback_service).generate_feedback(
                 assignment_context, submission_url, submission_id
             )
-        return await self.image_generator.generate_feedback(
+
+        from .image_evaluation import ImageEvaluationGenerator
+
+        return await ImageEvaluationGenerator(self.feedback_service).generate_feedback(
             assignment_context, submission_url, submission_id
         )

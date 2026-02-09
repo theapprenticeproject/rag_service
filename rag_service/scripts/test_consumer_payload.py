@@ -20,8 +20,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # ============================================================================
 PAYLOAD = {
   "submission_id": "IMSUB-2601280188",
-  "student_id": "ST00000182",
-  "img_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2601280188_20251105154700_C5099524_F32580_M18137454.png",
+  "student_id": "ST00000206",
+
+#   "img_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2601280188_20251105154700_C5099524_F32580_M18137454.png",
+  "img_url":"https://storage.googleapis.com/bucket_tap_1/uploads/11/AugProccess/20251105103501_C155227_F32580_M18105608.mp4",
+
   "created_at": "2026-01-28 16:58:27.423261",
   "similar_sources": None,
   "similarity_score": None,
@@ -34,6 +37,7 @@ PAYLOAD = {
   "plagiarism_source": ""
 }
 # ============================================================================
+
 
 
 def get_rabbitmq_settings():

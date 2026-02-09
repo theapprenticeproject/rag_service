@@ -4,11 +4,11 @@ from typing import Any, Dict, Tuple
 
 import frappe
 
-from .evaluation_generation import BaseEvaluationGenerator
-from .llm_providers import create_llm_provider
+from .evaluation_generation import EvaluationGenerator
+from ..core.llm_providers import create_llm_provider
 
 
-class ImageEvaluationGenerator(BaseEvaluationGenerator):
+class ImageEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for image submissions."""
 
     def _create_llm_provider(self) -> Tuple[Any, str]:
