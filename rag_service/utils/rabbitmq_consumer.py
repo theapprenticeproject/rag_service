@@ -5,7 +5,7 @@ import pika
 import json
 import asyncio
 from typing import Dict, Optional
-from ..handlers.feedback_handler import FeedbackHandler
+from ..core.feedback_handler import FeedbackHandler
 from .queue_manager import QueueManager
 
 class RabbitMQConsumer:

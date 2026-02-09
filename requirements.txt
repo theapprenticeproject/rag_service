@@ -1,2 +1,6 @@
 pikka
 langchain_openai
+aiohttp
+requests
+numpy
+opencv-python

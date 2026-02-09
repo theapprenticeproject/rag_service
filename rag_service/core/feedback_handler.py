@@ -1,18 +1,16 @@
-# rag_service/rag_service/handlers/feedback_handler.py
+# rag_service/rag_service/core/feedback_handler.py
 
 import frappe
 import json
 from datetime import datetime
 from typing import Dict, Optional
-from ..core.langchain_manager import LangChainManager
-from ..core.feedback_processor import FeedbackProcessor
+from ..core.feedback_service import FeedbackService
 from ..core.assignment_context_manager import AssignmentContextManager
 from ..utils.queue_manager import QueueManager
 
 class FeedbackHandler:
     def __init__(self):
-        self.langchain_manager = LangChainManager()
-        self.feedback_processor = FeedbackProcessor()
+        self.feedback_service = FeedbackService()
         self.queue_manager = QueueManager()
         self.assignment_context_manager = AssignmentContextManager()
 
@@ -35,7 +33,7 @@ class FeedbackHandler:
             
             print("\nGenerating feedback...")
             # Generate feedback
-            feedback, model_used, template_used = await self.langchain_manager.generate_feedback(
+            feedback, model_used, template_used = await self.feedback_service.generate_feedback(
                 assignment_context=assignment_context,
                 submission_url=message_data["img_url"],
                 submission_id=request_id,
@@ -45,7 +43,7 @@ class FeedbackHandler:
             
             print("\nFeedback generated, processing feedback...")
             # Process and deliver feedback
-            await self.feedback_processor.process_feedback(request_id, feedback, model_used, template_used)
+            await self.feedback_service.process_feedback(request_id, feedback, model_used, template_used)
             print("\nFeedback processing completed")
             
         except Exception as e:

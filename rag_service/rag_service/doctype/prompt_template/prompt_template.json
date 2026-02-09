@@ -7,6 +7,7 @@
  "field_order": [
   "template_name",
   "assignment_type",
+  "media_type",
   "system_prompt",
   "user_prompt",
   "response_format",
@@ -32,6 +33,14 @@
    "label": "Assignment Type",
    "options": "Written\nPractical\nPerformance\nCollaborative",
    "reqd": 1
+  },
+  {
+   "default": "image",
+   "fieldname": "media_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Media Type",
+   "options": "image\nvideo"
   },
   {
    "fieldname": "system_prompt",
