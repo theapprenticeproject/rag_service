@@ -6,14 +6,14 @@ from typing import Any, Dict, Optional, Tuple
 import frappe
 
 from .evaluation_generation import EvaluationGenerator
-from ..core.llm_providers import create_llm_provider
+from .llm_providers import create_llm_provider
 
 
 class VideoEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for video submissions."""
 
     def _resolve_service_account_credentials(self, settings: Any) -> Optional[Dict]:
-        raw_key = settings.get("credentials_json")
+        raw_key = settings.get("service_account_key_path")
 
         if isinstance(raw_key, dict):
             return raw_key

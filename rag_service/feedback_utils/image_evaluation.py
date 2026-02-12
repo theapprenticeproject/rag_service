@@ -5,7 +5,7 @@ from typing import Any, Dict, Tuple
 import frappe
 
 from .evaluation_generation import EvaluationGenerator
-from ..core.llm_providers import create_llm_provider
+from .llm_providers import create_llm_provider
 
 
 class ImageEvaluationGenerator(EvaluationGenerator):
