@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, Tuple
 import frappe
 
 from .evaluation_generation import EvaluationGenerator
-from .llm_providers import create_llm_provider
+from ..core.llm_providers import create_llm_provider
 
 
 class VideoEvaluationGenerator(EvaluationGenerator):
