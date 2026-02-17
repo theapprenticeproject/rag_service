@@ -37,7 +37,7 @@ class FeedbackService:
                     tempalate_used = "Feedback Template for AI Generated Submission"
 
                 # Handle plagiarized submissions
-                elif is_plagiarized and match_type in ["exact_duplicate", "near_duplicate"]:
+                elif is_plagiarized:
                     result_status = "Success - Flagged"
                     feedback = self._create_plagiarism_feedback(
                         plagiarism_data
