@@ -19,22 +19,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # EDIT THE PAYLOAD BELOW TO TEST DIFFERENT DATA
 # ============================================================================
 PAYLOAD = {
-  "submission_id": "IMSUB-2601280188",
+  "submission_id": "IMSUB-2602170459",
   "student_id": "ST00000206",
-
-#   "img_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2601280188_20251105154700_C5099524_F32580_M18137454.png",
-  "img_url":"https://storage.googleapis.com/bucket_tap_1/uploads/11/AugProccess/20251105103501_C155227_F32580_M18105608.mp4",
-
-  "created_at": "2026-01-28 16:58:27.423261",
+  "img_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2602170459_20251105103501_C155227_F32580_M18105608.mp4",
+  "created_at": "2026-02-17 22:32:44.472760",
   "similar_sources": None,
-  "similarity_score": None,
+  "similarity_score": 1.0,
   "is_plagiarized": False,
   "match_type": "original",
-  "assignment_id": "VA_L1_CA1-Basic",
+  "assignment_id": "VA_L2_CA1-Basic",
   "is_ai_generated": False,
-  "ai_detection_source": "",
+  "ai_detection_source": "None",
   "ai_confidence": 0.0,
-  "plagiarism_source": ""
+  "plagiarism_source": None
 }
 # ============================================================================
 

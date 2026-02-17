@@ -13,7 +13,7 @@ class VideoEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for video submissions."""
 
     def _resolve_service_account_credentials(self, settings: Any) -> Optional[Dict]:
-        raw_key = settings.get("service_account_key_path")
+        raw_key = settings.get("credentials_json")
 
         if isinstance(raw_key, dict):
             return raw_key
