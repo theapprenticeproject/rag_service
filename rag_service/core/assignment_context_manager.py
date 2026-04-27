@@ -160,13 +160,13 @@ class AssignmentContextManager:
             learning_objectives = context.get("learning_objectives", [])
             
             # Parse assignment type properly
-            assignment_type = assignment.get("type", "Practical")
+            assignment_type = assignment.get("assignment_type", "Practical")
+            course_vertical = assignment.get("course_vertical", "General")
+            activity_type = assignment.get("activity_type")
+            print(f"Parsed assignment type: {assignment_type}, course vertical: {course_vertical}, activity type: {activity_type}")
             
             # If type is empty or invalid, default to Practical
-            valid_types = ["Written", "Practical", "Performance", "Collaborative"]
-            if not assignment_type or assignment_type not in valid_types:
-                assignment_type = "Practical"
-                print(f"Invalid assignment type '{assignment.get('type')}', defaulting to 'Practical'")
+
             
             # Prepare learning objectives JSON
             formatted_objectives = []
@@ -186,13 +186,6 @@ class AssignmentContextManager:
                 limit=1
             )
             
-            # Determine course vertical
-            course_vertical = "General"
-            if "subject" in assignment and assignment["subject"]:
-                subject_parts = assignment["subject"].split("-")
-                if len(subject_parts) > 1:
-                    course_vertical = subject_parts[-1].strip()
-            
             if existing:
                 # Update existing
                 doc = frappe.get_doc("Assignment Context", existing[0].name)
@@ -200,6 +193,7 @@ class AssignmentContextManager:
                     "assignment_name": assignment.get("name", ""),
                     "course_vertical": course_vertical,
                     "assignment_type": assignment_type,
+                    "activity_type": activity_type,
                     "reference_image": assignment.get("reference_image", ""),
                     "description": assignment.get("description", ""),
                     "learning_objectives": json.dumps(formatted_objectives),
@@ -220,6 +214,7 @@ class AssignmentContextManager:
                     "assignment_name": assignment.get("name", ""),
                     "course_vertical": course_vertical,
                     "assignment_type": assignment_type,
+                    "activity_type": activity_type,
                     "reference_image": assignment.get("reference_image", ""),
                     "description": assignment.get("description", ""),
                     "learning_objectives": json.dumps(formatted_objectives),

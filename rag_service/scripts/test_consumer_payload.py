@@ -13,15 +13,20 @@ from pathlib import Path
 # Add the apps directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+image_5 = "https://storage.googleapis.com/bucket_tap_1/uploads/21/09/23_Sibling_issue/20251105064001_C107277_F32580_M18081088.png"
+image_1 = "https://storage.googleapis.com/bucket_tap_1/uploads/added_in_coll/20251007160901_C107788_F32580_M16096985.png"
+image_1_digital = "https://storage.googleapis.com/bucket_tap_1/uploads/11/AugProccess/20251007114200_C128977_F32580_M16044526.png"
+image_1_cropped = "https://storage.googleapis.com/bucket_tap_1/uploads/21/09/23_Sibling_issue/20251008024900_C132450_F32580_M16113857.png"
 
+video_original = "https://storage.googleapis.com/bucket_tap_1/uploads/Activity2_B1_Issue(Retrigger)/20251104121000_C445224_F32580_M17966712.mp4"
 
 # ============================================================================
 # EDIT THE PAYLOAD BELOW TO TEST DIFFERENT DATA
 # ============================================================================
 PAYLOAD = {
-  "submission_id": "IMSUB-2602170459",
+  "submission_id": "IMSUB-26021704659",
   "student_id": "ST00000206",
-  "img_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2602170459_20251105103501_C155227_F32580_M18105608.mp4",
+  "img_url": video_original,
   "created_at": "2026-02-17 22:32:44.472760",
   "similar_sources": None,
   "similarity_score": 1.0,

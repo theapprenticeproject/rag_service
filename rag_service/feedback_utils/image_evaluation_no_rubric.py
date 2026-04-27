@@ -1,4 +1,4 @@
-# rag_service/rag_service/feedback_utils/video_evaluation.py
+# rag_service/rag_service/feedback_utils/image_evaluation.py
 
 import json
 from typing import Any, Dict, Optional, Tuple
@@ -9,23 +9,8 @@ from .evaluation_generation import EvaluationGenerator
 from ..core.llm_providers import create_llm_provider
 
 
-class VideoEvaluationGenerator(EvaluationGenerator):
-    """Generate AI feedback for video submissions."""
-
-    def _resolve_service_account_credentials(self, settings: Any) -> Optional[Dict]:
-        raw_key = settings.get("credentials_json")
-
-        if isinstance(raw_key, dict):
-            return raw_key
-        if isinstance(raw_key, str):
-            raw_key = raw_key.strip()
-            if raw_key:
-                try:
-                    return json.loads(raw_key)
-                except json.JSONDecodeError:
-                    return None
-
-        return None
+class ImageEvaluationGenerator(EvaluationGenerator):
+    """Generate AI feedback for image submissions."""
 
     def _create_llm_provider(self,llm_provider_name) -> Tuple[Any, str]:
         llm_settings = frappe.get_list("LLM Settings", 
@@ -47,6 +32,7 @@ class VideoEvaluationGenerator(EvaluationGenerator):
         )
 
         return llm_provider, model_used
+    
 
     async def generate_feedback(
         self, assignment_context: Dict, submission_url: str, submission_id: str
@@ -56,24 +42,66 @@ class VideoEvaluationGenerator(EvaluationGenerator):
 
             llm_provider_name = "Gemini"
             llm_provider, model_used = self._create_llm_provider(llm_provider_name)
-            
-            activity_type = assignment_context["assignment"].get("activity_type")
-            course_vertical = assignment_context["assignment"].get("course_vertical")
-            print(f"Activity Type: {activity_type}, Course Vertical: {course_vertical}")
 
-
-            template = self.get_prompt_template("video", "both", activity_type, course_vertical)
+            template = self.get_prompt_template("image", "both")
             expected_format = self._get_expected_format(template)
-
+            assignment_context["assignment"]["rubrics"] = {
+  "Content Knowledge": [
+    {
+      "grade_value": 1,
+      "grade_description": "Invalid or random submission — task is blank, off-topic, or unrelated. No link to concept seen."
+    },
+    {
+      "grade_value": 2,
+      "grade_description": "Some link to topic visible but full of mistakes or confusion. The student likely didn't understand all steps."
+    },
+    {
+      "grade_value": 3,
+      "grade_description": "Main idea is correct and partly applied. Student is trying to use the concept but not yet fully correct."
+    },
+    {
+      "grade_value": 4,
+      "grade_description": "Work is accurate, clear, and independently done. Student can apply the concept correctly as shown."
+    },
+    {
+      "grade_value": 5,
+      "grade_description": "Work extends the concept meaningfully — connects it to real-life or shows creative application."
+    }
+  ],
+  "Creativity": [
+    {
+      "grade_value": 1,
+      "grade_description": "Invalid or no submission. Task blank or repeated exactly as taught, showing no original input."
+    },
+    {
+      "grade_value": 2,
+      "grade_description": "Minor variation without reason. Adds one small change (color, word, step, example) but without any creative link."
+    },
+    {
+      "grade_value": 3,
+      "grade_description": "Begins to combine ideas. Connects two or more taught concepts or introduces a small improvement that shows personal thought."
+    },
+    {
+      "grade_value": 4,
+      "grade_description": "Applies imagination with purpose. Adjusts or redesigns task elements to make it clearer, more effective, or more interesting."
+    },
+    {
+      "grade_value": 5,
+      "grade_description": "Generates and improves ideas. Produces original and relevant solutions by combining, evaluating, or refining ideas; connects learning to real-world or cross-topic contexts."
+    }
+  ]
+}
+            print(assignment_context)
             formatted_user_prompt = self._format_user_prompt(
                 template,
                 assignment_context,
-                "video",
+                "image",
                 [],
             )
             combined_prompt = f"{template.system_prompt}\n\n{formatted_user_prompt}"
+            print(f"\nCombined Prompt Sent to LLM:\n{combined_prompt}")
 
-            response = await llm_provider.generate_with_video(submission_url, combined_prompt)
+            response = await llm_provider.generate_with_vision(submission_url, combined_prompt)
             raw_text = response.text
             self.cost = llm_provider.calculate_cost(response.to_dict())
 
@@ -100,3 +128,4 @@ class VideoEvaluationGenerator(EvaluationGenerator):
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
             error_feedback['strengths'] = ["cost:1", f"Feedback_LP:0.89", f"Eval_LP:0.78"]
             return error_feedback, "N/A", template_used
+

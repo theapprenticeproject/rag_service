@@ -7,7 +7,10 @@
  "field_order": [
   "template_name",
   "assignment_type",
+  "course_vertical",
   "media_type",
+  "prompt_type",
+  "activity_type",
   "system_prompt",
   "user_prompt",
   "response_format",
@@ -35,12 +38,38 @@
    "reqd": 1
   },
   {
+   "fieldname": "course_vertical",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Course Vertical",
+   "options": "Arts\nDance\nCoding\nScience Lab\nElectronics\nFinancial Literacy\nCommerce",
+   "reqd": 1
+  },
+  {
    "default": "image",
    "fieldname": "media_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Media Type",
-   "options": "image\nvideo"
+   "options": "image\nvideo",
+   "reqd": 1
+  },
+  {
+   "fieldname": "prompt_type",
+   "default": "feedback",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Prompt Type",
+   "options": "evaluation\nfeedback\nboth",
+   "reqd": 1
+  },
+  {
+    "fieldname": "activity_type",
+    "fieldtype": "Select",
+    "in_list_view": 1,
+    "label": "Activity Type",
+    "options": "Regular\nChallenge",
+    "reqd": 1
   },
   {
    "fieldname": "system_prompt",

@@ -7,20 +7,23 @@
  "field_order": [
   "provider",
   "model_name",
-  "description",
   "temperature",
   "max_tokens",
+  "api_key",
+  "api_secret",
+  "location",
+  "project_id",
+  "credentials_json",
   "is_active",
   "is_default",
-  "api_key",
-  "api_secret"
+  "description"
  ],
  "fields": [
   {
    "fieldname": "provider",
    "fieldtype": "Select",
    "label": "LLM Provider",
-   "options": "OpenAI\nAnthropic\nTogether AI\nCustom"
+   "options": "OpenAI\nAnthropic\nTogether AI\nGemini\nCustom"
   },
   {
    "fieldname": "model_name",
@@ -44,6 +47,24 @@
    "fieldname": "max_tokens",
    "fieldtype": "Int",
    "label": "Max Tokens"
+  },
+    {
+   "default": "us-central1",
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location"
+  },
+  {
+   "fieldname": "project_id",
+   "fieldtype": "Data",
+   "label": "Project ID"
+  },
+  {
+   "fieldname": "credentials_json",
+   "fieldtype": "Code",
+   "in_list_view": 1,
+   "label": "Service Account Credentials (JSON)",
+   "options": "JSON"
   },
   {
    "default": "0",

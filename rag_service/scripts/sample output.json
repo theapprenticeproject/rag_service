@@ -1,0 +1,42 @@
+{
+  "submission_id": "IMSUB-2603081790",
+  "student_id": "ST00000206",
+  "assignment_id": "VA_L2_CA1-Basic",
+  "feedback": {
+    "overall_feedback": "Wow, this drawing of french fries looks delicious! You've used bright yellow and orange colors, which really captures the fun feeling of Pop Art. For your next piece, remember that Pop Art often repeats the same image. Try drawing these fries multiple times to make your artwork even more powerful. Keep creating!",
+    "overall_feedback_translated": "वाह, आपके बनाए हुए फ्रेंच फ्राइज़ बहुत स्वादिष्ट लग रहे हैं! आपने चमकीले पीले और नारंगी रंगों का बहुत अच्छा इस्तेमाल किया है, जो पॉप आर्ट वाली मज़ेदार फीलिंग देता है। अगली बार, यह याद रखें कि पॉप आर्ट में अक्सर एक ही चीज़ को बार-बार बनाया जाता है। अपनी कला को और भी प्रभावशाली बनाने के लिए इन फ्राइज़ को कई बार बनाने की कोशिश करें। बनाते रहें!",
+    "final_grade": 60,
+    "grade_recommendation": 0,
+    "plagiarism_output": {
+      "is_plagiarized": false,
+      "is_ai_generated": false,
+      "match_type": "original",
+      "plagiarism_source": "none",
+      "similarity_score": 0.0,
+      "ai_detection_source": "none",
+      "ai_confidence": 0.0,
+      "similar_sources": []
+    },
+    "rubric_evaluations": [
+      {
+        "Skill": "Content Knowledge",
+        "grade_value": 2,
+        "observation": "Evidence for Grade 2: The submission meets the criterion 'An object is clearly drawn and colored but not in a grid layout'. An object, which appears to be French fries in a carton, is drawn and colored. Why not Grade 3: The criterion 'Object is atleast clearly drawn in a grid layout' is not met. The artwork consists of a single object, not the same object repeated in a grid. Why not Grade 1: The submission exceeds Grade 1 as a clearly drawn object is present and the image is fully visible."
+      },
+      {
+        "Skill": "Creativity",
+        "grade_value": 4,
+        "observation": "Evidence for Grade 4: The submission meets the criteria for this level. The criteria 'The object is drawn and colored neatly within its boundary/outline' and 'The object should not be a cup, banana, popcorn, cold drink can or soup can' are both satisfied. The object drawn, French fries, is not on the prohibited list, and it is both drawn and colored. Why not Grade 5: The criterion 'Creative patterns like swirls, zigzags, geometric shapes, lines... are also drawn in the object or in the background' is not met. The vertical lines on the carton are considered natural object details, and the background coloring consists of strokes rather than an intentional pattern. Why not Grade 3: The submission exceeds Grade 3 because the criterion 'An object is drawn but not colored' is not applicable, as the object in the artwork is colored."
+      }
+    ],
+    "strengths": [
+      "cost:0.017661",
+      "Feedback_LP:-0.8927426180996738",
+      "Eval_LP:-0.6946198258153099"
+    ],
+    "areas_for_improvement": [],
+    "encouragement": "",
+    "translation_language": "Hindi"
+  },
+  "generated_at": "2026-03-07T19:10:11.239538"
+}

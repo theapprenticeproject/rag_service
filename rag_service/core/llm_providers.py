@@ -1,9 +1,8 @@
 # rag_service/rag_service/core/llm_providers.py
 
-import aiohttp
-import asyncio
+from together import Together
 import json
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 from .llm_interface import BaseLLMInterface
@@ -42,66 +41,40 @@ class OpenAIProvider(BaseLLMInterface):
 class TogetherAIProvider(BaseLLMInterface):
     """Together AI provider optimized for Llama 3.2 90B Vision"""
     
-    def __init__(self, api_key: str, model_name: str, temperature: float = 0.7, max_tokens: int = 2000):
+    def __init__(self, api_key: str, model_name: str, temperature: float = 0.7, max_tokens: int = 15000):
         super().__init__(api_key, model_name, temperature, max_tokens)
-        self.base_url = "https://api.together.xyz/v1/chat/completions"
-        
-        # Llama 3.2 90B specific configurations
-        self.is_llama_32_90b = "Llama-3.2-90B" in model_name
-        if self.is_llama_32_90b:
-            # Optimize for Llama 3.2 90B
-            self.timeout = 90  # Longer timeout for larger model
-            self.max_retries = 3
-    
-    async def generate(self, messages: List[Dict]) -> str:
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            # Llama 3.2 90B specific parameters
-            "top_p": 0.95,
-            "repetition_penalty": 1.1,
-            "stream": False
-        }
-        
-        # Add specific parameters for Llama 3.2 90B
-        if self.is_llama_32_90b:
-            data.update({
-                "frequency_penalty": 0.0,
-                "presence_penalty": 0.0,
-                "stop": ["</s>", "<|eot_id|>"]  # Llama 3.2 stop tokens
-            })
-        
-        timeout = aiohttp.ClientTimeout(total=self.timeout if hasattr(self, 'timeout') else 60)
-        
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            for attempt in range(self.max_retries if hasattr(self, 'max_retries') else 1):
-                try:
-                    async with session.post(self.base_url, headers=headers, json=data) as response:
-                        if response.status != 200:
-                            error_text = await response.text()
-                            if attempt < (self.max_retries - 1) if hasattr(self, 'max_retries') else 0:
-                                await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                                continue
-                            raise Exception(f"Together AI API error: {response.status} - {error_text}")
-                        
-                        result = await response.json()
-                        return result["choices"][0]["message"]["content"]
-                except asyncio.TimeoutError:
-                    if attempt < (self.max_retries - 1) if hasattr(self, 'max_retries') else 0:
-                        await asyncio.sleep(2 ** attempt)
-                        continue
-                    raise Exception("Request timeout - Llama 3.2 90B may need more processing time")
-    
-    async def generate_with_vision(self, messages: List[Dict]) -> str:
+        self.client = Together(api_key=api_key)
+
+    async def generate(self, system_prompt: str, user_prompt: str) -> str:
+        try:
+            messages = self.format_messages(system_prompt, user_prompt)
+            response = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=self.temperature
+            )
+            return response.text
+        except Exception as e:
+            print(f"Error during Together AI generation: {e}")
+            raise Exception(f"Error during Together AI generation: {e}")
+
+    async def generate_with_vision(self, image_url: str, system_prompt: str, user_prompt: str) -> str:
         # Llama 3.2 90B Vision handles image URLs in the message content
-        return await self.generate(messages)
+        try:
+            messages = self.format_messages(system_prompt, user_prompt, image_url)
+            # print(f"\nFormatted messages for Together AI:\n{json.dumps(messages, indent=2)}")
+            response = self.client.chat.completions.create(
+                        # reasoning={"enabled": False},
+                        reasoning_effort="low",
+                        model=self.model_name,
+                        messages=messages,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                )
+            return response
+        except Exception as e:
+            print(f"Error during Together AI vision generation: {e}")
+            raise Exception(f"Error during Together AI vision generation: {e}")
     
     def format_messages(self, system_prompt: str, user_prompt: str, image_url: Optional[str] = None) -> List[Dict]:
         """Format messages specifically for Llama 3.2 90B Vision"""
@@ -122,8 +95,7 @@ class TogetherAIProvider(BaseLLMInterface):
                     {
                         "type": "image_url", 
                         "image_url": {
-                            "url": image_url,
-                            "detail": "high"  # Llama 3.2 90B can handle high detail
+                            "url": image_url
                         }
                     }
                 ]
@@ -135,6 +107,34 @@ class TogetherAIProvider(BaseLLMInterface):
             ]
             
         return messages
+    
+    def calculate_cost(self, response):
+        """
+        Calculates the cost of a Together AI API call based on usage_metadata and input/output token costs.
+        Supports Together AI models.
+        
+        :param response: The ChatCompletion response object.
+        :param input_cost: Price per 1M input tokens.
+        :param output_cost: Price per 1M output tokens.
+        """
+        # Extract token counts from the usage attribute
+        model_name = response["model"]
+        all_models = self.client.models.list()
+        input_cost, output_cost = 0.0, 0.0
+        for model in all_models:
+            if model.id == model_name:
+                input_cost = model.pricing.input
+                output_cost = model.pricing.output
+                break
+
+        prompt_tokens = response["usage"]["prompt_tokens"]
+        completion_tokens = response["usage"]["completion_tokens"]
+
+        # Calculate costs (Standardizing to price per token by dividing by 1,000,000)
+        total_input_cost = (prompt_tokens / 1_000_000) * input_cost
+        total_output_cost = (completion_tokens / 1_000_000) * output_cost
+
+        return total_input_cost + total_output_cost
 
 
 class GeminiProvider(BaseLLMInterface):
@@ -148,26 +148,28 @@ class GeminiProvider(BaseLLMInterface):
         model_name: str,
         temperature: float = 0.7,
         max_tokens: int = 2000,
-        key_data: Optional[Dict] = None,
-        location: str = "us-central1",
-        project_id: Optional[str] = None,
+        settings: Any = None,
     ):
         super().__init__(api_key, model_name, temperature, max_tokens)
-        self.key_data = self._normalize_key_data(key_data)
-        self.location = location
-        self.project_id = project_id
+        
+        self.key_data = self._resolve_service_account_credentials(settings)
+        self.location = settings.location
+        self.project_id = settings.project_id
         self._ensure_vertex_init()
 
-    def _normalize_key_data(self, key_data: Optional[Dict]) -> Optional[Dict]:
-        if not key_data:
-            return None
-        if isinstance(key_data, dict):
-            return key_data
-        if isinstance(key_data, str):
-            try:
-                return json.loads(key_data)
-            except json.JSONDecodeError:
-                return None
+    def _resolve_service_account_credentials(self, settings: Any) -> Optional[Dict]:
+        raw_key = settings.get("credentials_json")
+
+        if isinstance(raw_key, dict):
+            return raw_key
+        if isinstance(raw_key, str):
+            raw_key = raw_key.strip()
+            if raw_key:
+                try:
+                    return json.loads(raw_key)
+                except json.JSONDecodeError:
+                    return None
+
         return None
 
     def _key_data_id(self) -> Optional[tuple]:
@@ -225,54 +227,107 @@ class GeminiProvider(BaseLLMInterface):
                 "temperature": self.temperature,
             },
         )
-        return response.text or ""
+        cost = self.calculate_cost(response)
+        return response.text, cost or "", 0.0
 
-    async def generate_with_vision(self, messages: List[Dict]) -> str:
-        prompt = self._combine_messages(messages)
-        image_url = None
-        for msg in messages:
-            content = msg.get("content", [])
-            if isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "image_url":
-                        image_url = item.get("image_url", {}).get("url")
-                        break
-            if image_url:
-                break
 
-        if not image_url:
-            return await self.generate(messages)
+    async def generate_with_vision(self, image_url: str, prompt: str) -> str:
+        try:
+            image_uri = self._normalize_media_uri(image_url)
+            mime_type = self._infer_mime_type(image_url)
+            image_part = Part.from_uri(uri=image_uri, mime_type=mime_type)
+            model = GenerativeModel(self.model_name)
+            response = model.generate_content(
+                [image_part, prompt],
+                generation_config={
+                    "temperature": self.temperature,
+                    "response_mime_type": "application/json",
+                },
+            )
+            return response
+        except Exception as e:
+            raise Exception(f"Error during vision generation: {e}")
 
-        image_part = Part.from_uri(uri=image_url, mime_type="image/jpeg")
-        model = GenerativeModel(self.model_name)
-        response = model.generate_content(
-            [image_part, prompt],
-            generation_config={
-                "temperature": self.temperature,
-            },
-        )
-        return response.text or ""
 
     async def generate_with_video(self, video_url: str, prompt: str) -> str:
-        video_uri = self._normalize_video_uri(video_url)
-        video_part = Part.from_uri(uri=video_uri, mime_type="video/mp4")
-        model = GenerativeModel(self.model_name)
-        response = model.generate_content(
-            [video_part, prompt],
-            generation_config={
-                "temperature": self.temperature,
-                "response_mime_type": "application/json",
+        try:
+            video_uri = self._normalize_media_uri(video_url)
+            mime_type = self._infer_mime_type(video_url)
+            video_part = Part.from_uri(uri=video_uri, mime_type=mime_type)
+            model = GenerativeModel(self.model_name)
+            response = model.generate_content(
+                [video_part, prompt],
+                generation_config={
+                    "temperature": self.temperature,
+                    "response_mime_type": "application/json",
+                },
+            )
+            return response
+        except Exception as e:
+            print(f"Error during video generation: {e}")
+            raise Exception(f"Error during video generation: {e}")
+        
+    def _infer_mime_type(self, url: str) -> str:
+        if url.endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
+            return f"image/{url.split('.')[-1]}"
+        if url.endswith((".mp4", ".avi", ".mov")):
+            return f"video/{url.split('.')[-1]}"
+        return "application/octet-stream"
+
+    def _normalize_media_uri(self, media_url: str) -> str:
+        if media_url.startswith("https://storage.googleapis.com/"):
+            return media_url.replace("https://storage.googleapis.com/", "gs://", 1)
+        return media_url
+
+    def calculate_cost(self, response):
+        """
+        Calculates the cost of a Gemini API call based on usage_metadata.
+        Supports Gemini 2.5 Pro (tiered), 2.5 Flash, and 3.1 Pro/Flash.
+        """
+        metadata = response.get("usage_metadata")
+        model = response.get("model_version", "gemini-2.5-pro")
+        
+        
+        # Token counts
+        # For images/multimodal, 'total_token_count' includes the media tokens
+        output_tokens = metadata.get("candidates_token_count", 0)
+        input_tokens = metadata.get("total_token_count", 0) - output_tokens
+        
+        # Pricing per 1 Million Tokens (as of March 2026)
+        pricing = {
+            "gemini-2.5-pro": {
+                "input_std": 1.25, "output_std": 10.00,
+                "input_long": 2.50, "output_long": 15.00
             },
-        )
-        return response.text or ""
+            "gemini-3.1-pro": {
+                "input_std": 2.00, "output_std": 12.00,
+                "input_long": 4.00, "output_long": 18.00
+            },
+            "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+            "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
+            "gemini-3-flash": {"input": 0.50, "output": 3.00}
+        }
 
-    def _normalize_video_uri(self, video_url: str) -> str:
-        if video_url.startswith("https://storage.googleapis.com/"):
-            return video_url.replace("https://storage.googleapis.com/", "gs://", 1)
-        return video_url
+        # Determine rate based on model and context length
+        if "2.5-pro" in model or "3.1-pro" in model:
+            base_model = "gemini-2.5-pro" if "2.5" in model else "gemini-3.1-pro"
+            # 200k token threshold for tiered pricing
+            if input_tokens <= 200_000:
+                in_rate = pricing[base_model]["input_std"]
+                out_rate = pricing[base_model]["output_std"]
+            else:
+                in_rate = pricing[base_model]["input_long"]
+                out_rate = pricing[base_model]["output_long"]
+        else:
+            # Flash models usually have flat pricing
+            rates = pricing.get(model, pricing["gemini-2.5-flash"]) # Default to Flash
+            in_rate = rates["input"]
+            out_rate = rates["output"]
 
+        # Calculate final cost
+        cost = (input_tokens * (in_rate / 1_000_000)) + (output_tokens * (out_rate / 1_000_000))
+        return round(cost, 6)
 
-# Factory function to create LLM providers
 def create_llm_provider(
     provider: str,
     api_key: str,

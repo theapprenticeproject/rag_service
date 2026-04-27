@@ -280,6 +280,11 @@ class FeedbackService:
                                         "Skill": "Content Knowledge",
                                         "grade_value": 0,
                                         "observation": "N/A - Submission flagged for similarity."
+                                    },
+                                    {
+                                        "Skill": "Creativity",
+                                        "grade_value": 0,
+                                        "observation": "N/A - Submission flagged for similarity."
                                     }],
             "plagiarism_output": {
                 "stock_audio_file": "invalid_submission_ai",
@@ -360,13 +365,13 @@ class FeedbackService:
         
         return fallback
 
-    def create_error_feedback(self) -> Dict:
+    def create_error_feedback(self, error_msg: str) -> Dict:
         """Create feedback for system errors"""
 
         feedback = {
             "overall_feedback": "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor.",
             "overall_feedback_translated": "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor.",
-            "strengths": ["Your submission was received successfully"],
+            "strengths": [f"Your submission was received successfully but system encountered an error during processing.{error_msg}"],
             "areas_for_improvement": ["No issues identified with your submission - this appears to be a technical problem"],
             "learning_objectives_feedback": ["Unable to evaluate due to system error - please resubmit"],
             "grade_recommendation": 0,
