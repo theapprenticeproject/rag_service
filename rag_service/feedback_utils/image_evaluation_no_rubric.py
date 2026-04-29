@@ -39,11 +39,18 @@ class ImageEvaluationGenerator(EvaluationGenerator):
     ) -> Tuple[Dict, str, str]:
         try:
             print("\n=== Starting AI Feedback Generation (Image) ===")
+            submission_data = {
+                "submission_type": "image",
+                "submission_url": submission_url,
+                "submission_text": None,
+            }
+            activity_type = assignment_context["assignment"].get("activity_type")
+            course_vertical = assignment_context["assignment"].get("course_vertical")
 
             llm_provider_name = "Gemini"
             llm_provider, model_used = self._create_llm_provider(llm_provider_name)
 
-            template = self.get_prompt_template("image", "both")
+            template = self.get_prompt_template("image", "both", activity_type, course_vertical)
             expected_format = self._get_expected_format(template)
             assignment_context["assignment"]["rubrics"] = {
   "Content Knowledge": [
@@ -92,13 +99,13 @@ class ImageEvaluationGenerator(EvaluationGenerator):
   ]
 }
             print(assignment_context)
-            formatted_user_prompt = self._format_user_prompt(
+            system_prompt, formatted_user_prompt = self._format_prompts(
                 template,
                 assignment_context,
-                "image",
+                submission_data,
                 [],
             )
-            combined_prompt = f"{template.system_prompt}\n\n{formatted_user_prompt}"
+            combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
             print(f"\nCombined Prompt Sent to LLM:\n{combined_prompt}")
 
             response = await llm_provider.generate_with_vision(submission_url, combined_prompt)
@@ -128,4 +135,3 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
             error_feedback['strengths'] = ["cost:1", f"Feedback_LP:0.89", f"Eval_LP:0.78"]
             return error_feedback, "N/A", template_used
-

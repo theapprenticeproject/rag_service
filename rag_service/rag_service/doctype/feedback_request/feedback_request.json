@@ -9,6 +9,9 @@
   "student_id",
   "assignment_id",
   "submission_id",
+  "submission_type",
+  "submission_url",
+  "submission_text",
   "submission_content",
   "plagiarism_score",
   "similar_sources",
@@ -45,6 +48,22 @@
    "fieldname": "submission_id",
    "fieldtype": "Data",
    "label": "Submission ID"
+  },
+  {
+   "fieldname": "submission_type",
+   "fieldtype": "Select",
+   "label": "Submission Type",
+   "options": "\nimage\nvideo\naudio\ntext\nemoji"
+  },
+  {
+   "fieldname": "submission_url",
+   "fieldtype": "Data",
+   "label": "Submission URL"
+  },
+  {
+   "fieldname": "submission_text",
+   "fieldtype": "Small Text",
+   "label": "Submission Text"
   },
   {
    "fieldname": "submission_content",

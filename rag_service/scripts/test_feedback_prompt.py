@@ -1,7 +1,9 @@
 message_data_plg = {
   "submission_id": "IMSUB-2601150154",
   "student_id": "2724532",
-  "img_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2601150154_IMSUB-25121730259_image.jpg",
+  "submission_type": "image",
+  "submission_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2601150154_IMSUB-25121730259_image.jpg",
+  "submission_text": None,
   "created_at": "2026-01-15 18:26:12.316528",
   "similar_sources": [
     {
@@ -34,7 +36,9 @@ message_data_plg = {
 message_data = {
   "submission_id": "IMSUB-2601160155",
   "student_id": "2724532",
-  "img_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2601160155_20251105064001_C107277_F32580_M18081088.png",
+  "submission_type": "image",
+  "submission_url": "https://storage.googleapis.com/tap-lms-submissions/submissions/IMSUB-2601160155_20251105064001_C107277_F32580_M18081088.png",
+  "submission_text": None,
   "created_at": "2026-01-16 10:49:13.515436",
   "similar_sources": "null",
   "similarity_score": "null",
@@ -48,7 +52,9 @@ message_data = {
 }
 
 message_data = {'submission_id': 'IMSUB-2601160156', 'student_id': '27245334', 
-'img_url': 'https://storage.googleapis.com/bucket_tap_1/uploads/11/AugProccess/20251104143002_C5095389_F32580_M18009048.png', 
+'submission_type': 'image',
+'submission_url': 'https://storage.googleapis.com/bucket_tap_1/uploads/11/AugProccess/20251104143002_C5095389_F32580_M18009048.png',
+'submission_text': None,
  'created_at': '2026-01-16 13:03:49.054548', 'similar_sources': None, 'similarity_score': None, 'is_plagiarized': False, 'match_type': 'original', 'assignment_id': 'SC_L4_CA1-Basic', 
  'is_ai_generated': False, 'ai_detection_source': '', 'ai_confidence': 0.0, 'plagiarism_source': ''}
 
@@ -88,6 +94,7 @@ assignment_context = {'assignment': {'name': 'VA_L1_CA1', 'description': '"“Cl
 
 import asyncio
 from rag_service.core.feedback_service import FeedbackService
+from rag_service.utils.submission_data import normalize_submission_payload
 
 async def main():
     feedback_service = FeedbackService()
@@ -96,7 +103,7 @@ async def main():
     # Generate feedback
     feedback, model_used, template_used = await feedback_service.generate_feedback(
         assignment_context=assignment_context,
-        submission_url=message_data["img_url"],
+        submission_data=normalize_submission_payload(message_data),
         submission_id=request_id,
         plagiarism_data=message_data,
         feedback_request_id=request_id

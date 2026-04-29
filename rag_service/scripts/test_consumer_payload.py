@@ -26,7 +26,9 @@ video_original = "https://storage.googleapis.com/bucket_tap_1/uploads/Activity2_
 PAYLOAD = {
   "submission_id": "IMSUB-26021704659",
   "student_id": "ST00000206",
-  "img_url": video_original,
+  "submission_type": "video",
+  "submission_url": video_original,
+  "submission_text": None,
   "created_at": "2026-02-17 22:32:44.472760",
   "similar_sources": None,
   "similarity_score": 1.0,
@@ -127,7 +129,14 @@ def main():
 
     try:
         # Validate required fields
-        required_fields = ["submission_id", "student_id", "assignment_id", "img_url"]
+        required_fields = [
+            "submission_id",
+            "student_id",
+            "assignment_id",
+            "submission_type",
+            "submission_url",
+            "submission_text",
+        ]
         missing = [f for f in required_fields if f not in PAYLOAD]
         if missing:
             print(f"\n✗ Missing required fields: {', '.join(missing)}")

@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "field:template_name",
  "creation": "2024-11-01 13:45:08.976278",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -11,8 +12,10 @@
   "media_type",
   "prompt_type",
   "activity_type",
-  "system_prompt",
-  "user_prompt",
+  "system_segment",
+  "grading_segment",
+  "subject_segment",
+  "output_segment",
   "response_format",
   "variables",
   "is_active",
@@ -51,7 +54,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Media Type",
-   "options": "image\nvideo",
+   "options": "image\nvideo\naudio\ntext",
    "reqd": 1
   },
   {
@@ -72,14 +75,32 @@
     "reqd": 1
   },
   {
-   "fieldname": "system_prompt",
-   "fieldtype": "Text",
-   "label": "System Prompt"
+   "fieldname": "system_segment",
+   "fieldtype": "Link",
+   "label": "System Segment",
+   "options": "Prompt Segment",
+   "reqd": 1
   },
   {
-   "fieldname": "user_prompt",
-   "fieldtype": "Text",
-   "label": "User Prompt Template"
+   "fieldname": "grading_segment",
+   "fieldtype": "Link",
+   "label": "Grading Segment",
+   "options": "Prompt Segment",
+   "reqd": 1
+  },
+  {
+   "fieldname": "subject_segment",
+   "fieldtype": "Link",
+   "label": "Subject Segment",
+   "options": "Prompt Segment",
+   "reqd": 1
+  },
+  {
+   "fieldname": "output_segment",
+   "fieldtype": "Link",
+   "label": "Output Segment",
+   "options": "Prompt Segment",
+   "reqd": 1
   },
   {
    "fieldname": "response_format",
@@ -141,7 +162,9 @@
    "write": 1
   }
  ],
+ "search_fields": "template_name,media_type,prompt_type,course_vertical,activity_type,category,tags",
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "template_name"
 }

@@ -13,7 +13,7 @@ from vertexai.generative_models import GenerativeModel, Part
 class OpenAIProvider(BaseLLMInterface):
     """OpenAI provider using LangChain"""
     
-    def __init__(self, api_key: str, model_name: str, temperature: float = 0.7, max_tokens: int = 2000):
+    def __init__(self, api_key: str, model_name: str, temperature: float = 0.7, max_tokens: int = 2000, settings: Any = None):
         super().__init__(api_key, model_name, temperature, max_tokens)
         self.llm = ChatOpenAI(
             model_name=model_name,
@@ -41,7 +41,7 @@ class OpenAIProvider(BaseLLMInterface):
 class TogetherAIProvider(BaseLLMInterface):
     """Together AI provider optimized for Llama 3.2 90B Vision"""
     
-    def __init__(self, api_key: str, model_name: str, temperature: float = 0.7, max_tokens: int = 15000):
+    def __init__(self, api_key: str, model_name: str, temperature: float = 0.7, max_tokens: int = 15000, settings: Any = None):
         super().__init__(api_key, model_name, temperature, max_tokens)
         self.client = Together(api_key=api_key)
 
@@ -58,7 +58,7 @@ class TogetherAIProvider(BaseLLMInterface):
             print(f"Error during Together AI generation: {e}")
             raise Exception(f"Error during Together AI generation: {e}")
 
-    async def generate_with_vision(self, image_url: str, system_prompt: str, user_prompt: str) -> str:
+    async def generate_with_vision(self, image_url: str, system_prompt: str, user_prompt: str = "") -> str:
         # Llama 3.2 90B Vision handles image URLs in the message content
         try:
             messages = self.format_messages(system_prompt, user_prompt, image_url)
@@ -230,48 +230,85 @@ class GeminiProvider(BaseLLMInterface):
         cost = self.calculate_cost(response)
         return response.text, cost or "", 0.0
 
+    def _build_media_part(self, media_source, mime_type: Optional[str] = None, default_kind: str = "application") -> Part:
+        if isinstance(media_source, dict):
+            media_bytes = media_source.get("content")
+            resolved_mime_type = mime_type or media_source.get("mime_type")
+            if media_bytes is not None:
+                return Part.from_data(data=media_bytes, mime_type=resolved_mime_type or f"{default_kind}/octet-stream")
+            media_url = media_source.get("submission_url") or media_source.get("url")
+            resolved_mime_type = resolved_mime_type or self._infer_mime_type(media_url)
+            return Part.from_uri(uri=self._normalize_media_uri(media_url), mime_type=resolved_mime_type)
 
-    async def generate_with_vision(self, image_url: str, prompt: str) -> str:
+        if isinstance(media_source, (bytes, bytearray)):
+            return Part.from_data(data=bytes(media_source), mime_type=mime_type or f"{default_kind}/octet-stream")
+
+        media_url = str(media_source)
+        return Part.from_uri(
+            uri=self._normalize_media_uri(media_url),
+            mime_type=mime_type or self._infer_mime_type(media_url),
+        )
+
+    async def _generate_with_media(self, media_source, prompt: str, mime_type: Optional[str] = None, default_kind: str = "application") -> str:
+        media_part = self._build_media_part(media_source, mime_type=mime_type, default_kind=default_kind)
+        model = GenerativeModel(self.model_name)
+        response = model.generate_content(
+            [media_part, prompt],
+            generation_config={
+                "temperature": self.temperature,
+                "response_mime_type": "application/json",
+            },
+        )
+        return response
+
+    async def generate_with_vision(self, image_source, prompt: str, mime_type: Optional[str] = None) -> str:
         try:
-            image_uri = self._normalize_media_uri(image_url)
-            mime_type = self._infer_mime_type(image_url)
-            image_part = Part.from_uri(uri=image_uri, mime_type=mime_type)
-            model = GenerativeModel(self.model_name)
-            response = model.generate_content(
-                [image_part, prompt],
-                generation_config={
-                    "temperature": self.temperature,
-                    "response_mime_type": "application/json",
-                },
+            return await self._generate_with_media(
+                image_source,
+                prompt,
+                mime_type=mime_type,
+                default_kind="image",
             )
-            return response
         except Exception as e:
             raise Exception(f"Error during vision generation: {e}")
 
 
-    async def generate_with_video(self, video_url: str, prompt: str) -> str:
+    async def generate_with_video(self, video_source, prompt: str, mime_type: Optional[str] = None) -> str:
         try:
-            video_uri = self._normalize_media_uri(video_url)
-            mime_type = self._infer_mime_type(video_url)
-            video_part = Part.from_uri(uri=video_uri, mime_type=mime_type)
-            model = GenerativeModel(self.model_name)
-            response = model.generate_content(
-                [video_part, prompt],
-                generation_config={
-                    "temperature": self.temperature,
-                    "response_mime_type": "application/json",
-                },
+            return await self._generate_with_media(
+                video_source,
+                prompt,
+                mime_type=mime_type,
+                default_kind="video",
             )
-            return response
         except Exception as e:
             print(f"Error during video generation: {e}")
             raise Exception(f"Error during video generation: {e}")
+
+    async def generate_with_audio(self, audio_source, prompt: str, mime_type: Optional[str] = None) -> str:
+        try:
+            return await self._generate_with_media(
+                audio_source,
+                prompt,
+                mime_type=mime_type,
+                default_kind="audio",
+            )
+        except Exception as e:
+            print(f"Error during audio generation: {e}")
+            raise Exception(f"Error during audio generation: {e}")
         
     def _infer_mime_type(self, url: str) -> str:
         if url.endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
             return f"image/{url.split('.')[-1]}"
         if url.endswith((".mp4", ".avi", ".mov")):
             return f"video/{url.split('.')[-1]}"
+        if url.endswith((".mp3", ".wav", ".ogg", ".aac", ".m4a", ".flac")):
+            extension = url.split(".")[-1]
+            if extension == "mp3":
+                return "audio/mpeg"
+            if extension == "m4a":
+                return "audio/mp4"
+            return f"audio/{extension}"
         return "application/octet-stream"
 
     def _normalize_media_uri(self, media_url: str) -> str:

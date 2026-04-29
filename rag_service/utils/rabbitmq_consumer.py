@@ -117,7 +117,14 @@ class RabbitMQConsumer:
                 return
                 
             # Validate required fields
-            required_fields = ['submission_id', 'student_id', 'assignment_id', 'img_url']
+            required_fields = [
+                'submission_id',
+                'student_id',
+                'assignment_id',
+                'submission_type',
+                'submission_url',
+                'submission_text',
+            ]
             missing_fields = [field for field in required_fields if field not in message]
             
             if missing_fields:

@@ -1,61 +1,25 @@
 # rag_service/rag_service/feedback_utils/video_evaluation.py
 
-import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import frappe
 
 from .evaluation_generation import EvaluationGenerator
-from ..core.llm_providers import create_llm_provider
+from ..utils.gcp_service_client import GCPServiceClient
 
 
 class VideoEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for video submissions."""
 
-    def _resolve_service_account_credentials(self, settings: Any) -> Optional[Dict]:
-        raw_key = settings.get("credentials_json")
-
-        if isinstance(raw_key, dict):
-            return raw_key
-        if isinstance(raw_key, str):
-            raw_key = raw_key.strip()
-            if raw_key:
-                try:
-                    return json.loads(raw_key)
-                except json.JSONDecodeError:
-                    return None
-
-        return None
-
-    def _create_llm_provider(self,llm_provider_name) -> Tuple[Any, str]:
-        llm_settings = frappe.get_list("LLM Settings", 
-                                       filters={"is_active": 1, "provider": llm_provider_name}, limit=1)
-        
-        if not llm_settings:
-            raise Exception(f"No active {llm_provider_name} configuration found")
-
-        settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
-        model_used = llm_settings[0].name
-
-        llm_provider = create_llm_provider(
-            provider=llm_provider_name,
-            api_key="",
-            model_name=settings.model_name,
-            temperature=settings.temperature or 0,
-            max_tokens=settings.max_tokens or 2000,
-            settings=settings,
-        )
-
-        return llm_provider, model_used
-
     async def generate_feedback(
-        self, assignment_context: Dict, submission_url: str, submission_id: str
+        self, assignment_context: Dict, submission_data: Dict, submission_id: str
     ) -> Tuple[Dict, str, str]:
+        media_service = None
+        media_asset = None
         try:
             print("\n=== Starting AI Feedback Generation (Image) ===")
 
-            llm_provider_name = "Gemini"
-            llm_provider, model_used = self._create_llm_provider(llm_provider_name)
+            llm_provider, model_used = self._create_llm_provider("Gemini")
             
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
@@ -65,15 +29,22 @@ class VideoEvaluationGenerator(EvaluationGenerator):
             template = self.get_prompt_template("video", "both", activity_type, course_vertical)
             expected_format = self._get_expected_format(template)
 
-            formatted_user_prompt = self._format_user_prompt(
+            system_prompt, formatted_user_prompt = self._format_prompts(
                 template,
                 assignment_context,
-                "video",
+                submission_data,
                 [],
             )
-            combined_prompt = f"{template.system_prompt}\n\n{formatted_user_prompt}"
+            combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
 
-            response = await llm_provider.generate_with_video(submission_url, combined_prompt)
+            media_service = GCPServiceClient()
+            media_asset = media_service.download_media(submission_data["submission_url"])
+
+            response = await llm_provider.generate_with_video(
+                media_asset,
+                combined_prompt,
+                mime_type=media_asset["mime_type"],
+            )
             raw_text = response.text
             self.cost = llm_provider.calculate_cost(response.to_dict())
 
@@ -100,3 +71,6 @@ class VideoEvaluationGenerator(EvaluationGenerator):
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
             error_feedback['strengths'] = ["cost:1", f"Feedback_LP:0.89", f"Eval_LP:0.78"]
             return error_feedback, "N/A", template_used
+        finally:
+            if media_service:
+                media_service.cleanup(media_asset)

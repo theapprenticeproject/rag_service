@@ -5,6 +5,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
 import frappe
+from ..core.llm_providers import create_llm_provider
+from ..utils.submission_data import (
+    MEDIA_SUBMISSION_TYPES,
+    TEXT_SUBMISSION_TYPES,
+    format_submission_text_for_prompt,
+)
 
 class EvaluationGenerator:
     """Shared evaluation generation utilities for different media types."""
@@ -28,12 +34,25 @@ class EvaluationGenerator:
         "mpeg",
         "mpg",
     }
+    AUDIO_EXTENSIONS = {
+        "mp3",
+        "wav",
+        "m4a",
+        "aac",
+        "ogg",
+        "flac",
+    }
 
     def __init__(self, feedback_service: Any):
         self.feedback_service = feedback_service
 
-    def detect_media_type(self, submission_url: str) -> str:
-        """Detect media type based on URL/extension."""
+    def detect_media_type(self, submission_data: Dict) -> str:
+        """Detect media type using submission_type first, then URL extension as fallback."""
+        submission_type = (submission_data.get("submission_type") or "").lower()
+        if submission_type in MEDIA_SUBMISSION_TYPES or submission_type in TEXT_SUBMISSION_TYPES:
+            return "text" if submission_type in TEXT_SUBMISSION_TYPES else submission_type
+
+        submission_url = submission_data.get("submission_url") or ""
         if not submission_url:
             return "image"
 
@@ -44,9 +63,13 @@ class EvaluationGenerator:
                 return "image"
             if ext in self.VIDEO_EXTENSIONS:
                 return "video"
+            if ext in self.AUDIO_EXTENSIONS:
+                return "audio"
 
         if "video" in url_without_query:
             return "video"
+        if "audio" in url_without_query:
+            return "audio"
         return "image"
 
     def clean_json_response(self, response: str) -> str:
@@ -180,6 +203,10 @@ class EvaluationGenerator:
             print(f"Using {media_type} {prompt_type} template: {template.template_name}")
 
             template.db_set("last_used", datetime.now())
+            self._touch_prompt_segment(template.system_segment)
+            self._touch_prompt_segment(template.grading_segment)
+            self._touch_prompt_segment(template.subject_segment)
+            self._touch_prompt_segment(template.output_segment)
             frappe.db.commit()
             return template
 
@@ -199,45 +226,76 @@ class EvaluationGenerator:
             raise Exception("Active template has invalid response format")
 
 
-    def _format_user_prompt(
+    def _render_prompt_content(self, content: str, prompt_vars: Dict[str, Any]) -> str:
+        rendered = content or ""
+        for key, value in prompt_vars.items():
+            placeholder = "{" + key + "}"
+            if placeholder in rendered:
+                rendered = rendered.replace(placeholder, str(value))
+        return rendered
+
+    def _build_prompt_vars(
+        self,
+        assignment_context: Dict,
+        submission_data: Dict,
+        rubric_evaluations: Dict,
+    ) -> Dict[str, Any]:
+        learning_objectives = self.format_objectives(
+            assignment_context.get("learning_objectives", [])
+        )
+
+        rubric_criteria = self.format_rubrics(
+            assignment_context.get("assignment", {}).get("rubrics", "")
+        )
+
+        return {
+            "assignment_name": assignment_context.get("assignment", {}).get("name", ""),
+            "assignment_description": assignment_context.get("assignment", {}).get("description", ""),
+            "course_vertical": assignment_context.get("course_vertical", "General"),
+            "assignment_type": assignment_context.get("assignment", {}).get("assignment_type", "Practical"),
+            "learning_objectives": learning_objectives,
+            "rubric_evaluations": rubric_evaluations,
+            "rubric_criteria": rubric_criteria,
+            "Language": assignment_context.get("student", {}).get("language", "English"),
+            "Grade_Level": assignment_context.get("student", {}).get("grade", "1"),
+            "submission_type": submission_data.get("submission_type", ""),
+            "submission_text": submission_data.get("submission_text", "") or "",
+            "submission_text_context": format_submission_text_for_prompt(submission_data),
+        }
+
+    def _format_prompts(
         self,
         template: Any,
         assignment_context: Dict,
-        media_type: str,
+        submission_data: Dict,
         rubric_evaluations: Dict,
-    ) -> str:
+    ) -> Tuple[str, str]:
         try:
-            learning_objectives = self.format_objectives(
-                assignment_context.get("learning_objectives", [])
+            prompt_vars = self._build_prompt_vars(
+                assignment_context,
+                submission_data,
+                rubric_evaluations,
             )
-            
-            rubric_criteria = self.format_rubrics(assignment_context.get("assignment", {}).get("rubrics", ""))
-            
+            system_segment = frappe.get_doc("Prompt Segment", template.system_segment)
+            grading_segment = frappe.get_doc("Prompt Segment", template.grading_segment)
+            subject_segment = frappe.get_doc("Prompt Segment", template.subject_segment)
+            output_segment = frappe.get_doc("Prompt Segment", template.output_segment)
 
-            # print(rubric_criteria)
+            system_prompt = self._render_prompt_content(system_segment.content, prompt_vars)
+            user_prompt_sections = [
+                self._render_prompt_content(grading_segment.content, prompt_vars),
+                self._render_prompt_content(subject_segment.content, prompt_vars),
+                self._render_prompt_content(output_segment.content, prompt_vars),
+            ]
 
-            user_prompt_vars = {
-                "assignment_name": assignment_context.get("assignment", {}).get("name", ""),
-                "assignment_description": assignment_context.get("assignment", {}).get("description", ""),
-                "course_vertical": assignment_context.get("course_vertical", "General"),
-                "assignment_type": assignment_context.get("assignment", {}).get("assignment_type", "Practical"),
-                "learning_objectives": learning_objectives,
-                "rubric_evaluations": rubric_evaluations,
-                "rubric_criteria": rubric_criteria,
-                "Language": assignment_context.get("student", {}).get("language", "English"),
-                "Grade_Level": assignment_context.get("student", {}).get("grade", "1"),
-            }
+            if submission_data.get("submission_type") in TEXT_SUBMISSION_TYPES:
+                user_prompt_sections.append(prompt_vars["submission_text_context"])
 
-            formatted_user_prompt = template.user_prompt
-            for key, value in user_prompt_vars.items():
-                placeholder = "{" + key + "}"
-                if placeholder in formatted_user_prompt:
-                    formatted_user_prompt = formatted_user_prompt.replace(placeholder, str(value))
-
-            return formatted_user_prompt
+            formatted_user_prompt = "\n\n".join(section for section in user_prompt_sections if section)
+            return system_prompt, formatted_user_prompt
         except Exception as e:
-            print(f"Error formatting user prompt: {e}")
-            raise Exception("Failed to format user prompt with specified variables")
+            print(f"Error formatting prompt: {e}")
+            raise Exception("Failed to assemble prompt with specified variables")
 
     def _parse_rubric_evaluations(self, raw_text: str) -> Dict:
         cleaned_text = self.clean_json_response(raw_text or "")
@@ -304,21 +362,63 @@ class EvaluationGenerator:
             pass
         return "Built-in Universal Template"
 
+    def _touch_prompt_segment(self, segment_name: str) -> None:
+        if not segment_name:
+            return
+        frappe.db.set_value("Prompt Segment", segment_name, "last_used", datetime.now(), update_modified=False)
+
+    def _create_llm_provider(self, llm_provider_name: str = "Gemini") -> Tuple[Any, str]:
+        llm_settings = frappe.get_list(
+            "LLM Settings",
+            filters={"is_active": 1, "provider": llm_provider_name},
+            limit=1,
+        )
+
+        if not llm_settings:
+            raise Exception(f"No active {llm_provider_name} configuration found")
+
+        settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
+        model_used = llm_settings[0].name
+
+        llm_provider = create_llm_provider(
+            provider=llm_provider_name,
+            api_key="",
+            model_name=settings.model_name,
+            temperature=settings.temperature or 0,
+            max_tokens=settings.max_tokens or 2000,
+            settings=settings,
+        )
+        return llm_provider, model_used
+
     async def generate_ai_feedback(
-        self, assignment_context: Dict, submission_url: str, submission_id: str
+        self, assignment_context: Dict, submission_data: Dict, submission_id: str
     ) -> Tuple[Dict, str, str]:
-        media_type = self.detect_media_type(submission_url)
+        media_type = self.detect_media_type(submission_data)
         if media_type == "video":
             from .video_evaluation import VideoEvaluationGenerator
 
             return await VideoEvaluationGenerator(self.feedback_service).generate_feedback(
-                assignment_context, submission_url, submission_id
+                assignment_context, submission_data, submission_id
+            )
+
+        if media_type == "audio":
+            from .audio_evaluation import AudioEvaluationGenerator
+
+            return await AudioEvaluationGenerator(self.feedback_service).generate_feedback(
+                assignment_context, submission_data, submission_id
+            )
+
+        if media_type == "text":
+            from .text_evaluation import TextEvaluationGenerator
+
+            return await TextEvaluationGenerator(self.feedback_service).generate_feedback(
+                assignment_context, submission_data, submission_id
             )
 
         from .image_evaluation_both import ImageEvaluationGenerator
 
         return await ImageEvaluationGenerator(self.feedback_service).generate_feedback(
-            assignment_context, submission_url, submission_id
+            assignment_context, submission_data, submission_id
         )
 
 

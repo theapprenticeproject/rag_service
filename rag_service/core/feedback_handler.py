@@ -7,6 +7,7 @@ from typing import Dict, Optional
 from ..core.feedback_service import FeedbackService
 from ..core.assignment_context_manager import AssignmentContextManager
 from ..utils.queue_manager import QueueManager
+from ..utils.submission_data import build_submission_content, normalize_submission_payload
 
 class FeedbackHandler:
     def __init__(self):
@@ -18,9 +19,10 @@ class FeedbackHandler:
         """Handle a new submission from plagiarism queue"""
         request_id = None
         try:
+            submission_data = normalize_submission_payload(message_data)
 
             # Create or update feedback request
-            request_id = await self.create_feedback_request(message_data)
+            request_id = await self.create_feedback_request(message_data, submission_data)
             print(f"\nFeedback Request Created/Updated: {request_id}")
             
             # Get assignment context
@@ -35,7 +37,7 @@ class FeedbackHandler:
             # Generate feedback
             feedback, model_used, template_used = await self.feedback_service.generate_feedback(
                 assignment_context=assignment_context,
-                submission_url=message_data["img_url"],
+                submission_data=submission_data,
                 submission_id=request_id,
                 plagiarism_data=message_data,
                 feedback_request_id=request_id
@@ -56,7 +58,7 @@ class FeedbackHandler:
                 await self.mark_request_failed(request_id, str(e))
             raise
 
-    async def create_feedback_request(self, message_data: Dict) -> str:
+    async def create_feedback_request(self, message_data: Dict, submission_data: Dict) -> str:
         """Create or update feedback request"""
         try:
             print("\n=== Creating/Updating Feedback Request ===")
@@ -78,6 +80,10 @@ class FeedbackHandler:
                 feedback_request.processing_attempts += 1
                 feedback_request.status = "Processing"
                 feedback_request.error_log = None  # Clear previous errors
+                feedback_request.submission_type = submission_data["submission_type"]
+                feedback_request.submission_url = submission_data["submission_url"]
+                feedback_request.submission_text = submission_data["submission_text"]
+                feedback_request.submission_content = build_submission_content(submission_data)
                 feedback_request.save()
                 
             else:
@@ -87,7 +93,10 @@ class FeedbackHandler:
                     "submission_id": message_data["submission_id"],
                     "student_id": message_data["student_id"],
                     "assignment_id": message_data["assignment_id"],
-                    "submission_content": message_data["img_url"],
+                    "submission_type": submission_data["submission_type"],
+                    "submission_url": submission_data["submission_url"],
+                    "submission_text": submission_data["submission_text"],
+                    "submission_content": build_submission_content(submission_data),
                     "plagiarism_score": message_data.get("plagiarism_score", 0.0),
                     "is_plagiarized": message_data.get("is_plagiarized", False),
                     "plagiarism_source": message_data.get("plagiarism_source", "none"),

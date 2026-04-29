@@ -13,7 +13,7 @@ class FeedbackService:
         self.queue_manager = QueueManager()
         self.model_used = None
 
-    async def generate_feedback( self, assignment_context: Dict, submission_url: str, submission_id: str,
+    async def generate_feedback( self, assignment_context: Dict, submission_data: Dict, submission_id: str,
                                     plagiarism_data: Dict = None, feedback_request_id: str = None) -> Dict:
         """Generate feedback with plagiarism context"""
 
@@ -48,7 +48,7 @@ class FeedbackService:
                 else:
                     result_status = "Success - Original"
                     feedback, model_used, tempalate_used = await self.evaluation_generator.generate_ai_feedback(
-                        assignment_context, submission_url, submission_id
+                        assignment_context, submission_data, submission_id
                     )
             
             feedback["translation_language"] = assignment_context["student"].get("language", "English")
