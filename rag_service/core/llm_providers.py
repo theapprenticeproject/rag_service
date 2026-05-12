@@ -227,7 +227,7 @@ class GeminiProvider(BaseLLMInterface):
                 "temperature": self.temperature,
             },
         )
-        cost = self.calculate_cost(response)
+        cost = self.calculate_cost(response.to_dict())
         return response.text, cost or "", 0.0
 
     def _build_media_part(self, media_source, mime_type: Optional[str] = None, default_kind: str = "application") -> Part:

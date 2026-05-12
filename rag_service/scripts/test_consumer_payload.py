@@ -24,21 +24,34 @@ video_original = "https://storage.googleapis.com/bucket_tap_1/uploads/Activity2_
 # EDIT THE PAYLOAD BELOW TO TEST DIFFERENT DATA
 # ============================================================================
 PAYLOAD = {
-  "submission_id": "IMSUB-26021704659",
-  "student_id": "ST00000206",
-  "submission_type": "video",
-  "submission_url": video_original,
-  "submission_text": None,
-  "created_at": "2026-02-17 22:32:44.472760",
-  "similar_sources": None,
-  "similarity_score": 1.0,
+  "submission_id": "SUB-2605112507",
+  "student_id": "ST00002495",
+  "submission_type": "text",
+  "submission_text": "where to?",
+  "submission_url": None,
+  "program_enrollment": "1povvk2ga4",
+  "week": 1,
+  "is_primary": 1,
+  "escalation_step_at_submit": 0,
+  "archetype": "Dormant",
+  "experiment_arm": "default",
+  "expected_submission_type": "image",
+  "language": "Hindi",
+  "batch": "1-BT0205",
+  "current_week": 1,
+  "current_path": "Core",
+  "current_tier": "Basic",
+  "course_level": "Level 1-Arts-C0070",
+  "created_at": "2026-05-11 23:01:31.374768",
+  "similar_sources": [],
+  "similarity_score": 0.0,
   "is_plagiarized": False,
   "match_type": "original",
-  "assignment_id": "VA_L2_CA1-Basic",
+  "assignment_id": "VA_L1_CA1-Basic",
   "is_ai_generated": False,
-  "ai_detection_source": "None",
+  "ai_detection_source": "",
   "ai_confidence": 0.0,
-  "plagiarism_source": None
+  "plagiarism_source": ""
 }
 # ============================================================================
 
@@ -53,7 +66,7 @@ def get_rabbitmq_settings():
             "username": "aoafhbrm",
             "password": "****",
             "virtual_host": "aoafhbrm",
-            "queue": "plg_result_q_local",
+            "queue": "plg_result_q",
         }
     except Exception as e:
         print(f"Error fetching RabbitMQ settings: {e}")

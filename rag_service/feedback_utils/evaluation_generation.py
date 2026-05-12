@@ -183,12 +183,11 @@ class EvaluationGenerator:
         try:
             print(f"\n=== Getting Prompt Template for {prompt_type}===")
 
-            # print(f"Media Type: {media_type}")
-            # print(f"Course Vertical: {course_vertical}")
-            # print(f"prompt_type Type: {prompt_type}")
-            # print(f"activity_type: {activity_type}")
-            # import sys
-            # sys.exit(0)
+            print(f"Media Type: {media_type}")
+            print(f"Course Vertical: {course_vertical}")
+            print(f"prompt_type Type: {prompt_type}")
+            print(f"activity_type: {activity_type}")
+
 
 
             templates = frappe.get_list(
@@ -249,9 +248,9 @@ class EvaluationGenerator:
         )
 
         return {
-            "assignment_name": assignment_context.get("assignment", {}).get("name", ""),
+            "assignment_name": assignment_context.get("assignment", {}).get("assignment_name", ""),
             "assignment_description": assignment_context.get("assignment", {}).get("description", ""),
-            "course_vertical": assignment_context.get("course_vertical", "General"),
+            "course_vertical": assignment_context.get("assignment", {}).get("course_vertical", ""),
             "assignment_type": assignment_context.get("assignment", {}).get("assignment_type", "Practical"),
             "learning_objectives": learning_objectives,
             "rubric_evaluations": rubric_evaluations,
@@ -261,6 +260,11 @@ class EvaluationGenerator:
             "submission_type": submission_data.get("submission_type", ""),
             "submission_text": submission_data.get("submission_text", "") or "",
             "submission_text_context": format_submission_text_for_prompt(submission_data),
+            "submission_rules": assignment_context.get("assignment", {}).get("submission_rules", []),
+            "expected_submission_type": submission_data.get("expected_submission_type", ""),
+            "archetype": submission_data.get("archetype"),
+            "current_week": submission_data.get("current_week"),
+            "escalation_step_at_submit": submission_data.get("escalation_step_at_submit"),
         }
 
     def _format_prompts(
@@ -276,6 +280,10 @@ class EvaluationGenerator:
                 submission_data,
                 rubric_evaluations,
             )
+            # print("##############")
+            # print(prompt_vars)
+            # print("##############")
+
             system_segment = frappe.get_doc("Prompt Segment", template.system_segment)
             grading_segment = frappe.get_doc("Prompt Segment", template.grading_segment)
             subject_segment = frappe.get_doc("Prompt Segment", template.subject_segment)
@@ -292,6 +300,10 @@ class EvaluationGenerator:
                 user_prompt_sections.append(prompt_vars["submission_text_context"])
 
             formatted_user_prompt = "\n\n".join(section for section in user_prompt_sections if section)
+            print("#"*80)
+            print(system_prompt)
+            print(formatted_user_prompt)
+            print("#"*80)
             return system_prompt, formatted_user_prompt
         except Exception as e:
             print(f"Error formatting prompt: {e}")
@@ -310,7 +322,7 @@ class EvaluationGenerator:
         feedback = {
             "overall_feedback": "Good job",
             "overall_feedback_translated": "Good job",
-            "grade_recommendation": 0,
+            "final_grade": 0,
             "rubric_evaluations": [
                 {
                     "Skill": "Content Knowledge",

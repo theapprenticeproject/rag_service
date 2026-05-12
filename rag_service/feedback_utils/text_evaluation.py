@@ -3,6 +3,7 @@
 from typing import Dict, Tuple
 
 import frappe
+import traceback
 
 from .evaluation_generation import EvaluationGenerator
 
@@ -28,25 +29,29 @@ class TextEvaluationGenerator(EvaluationGenerator):
                 submission_data,
                 [],
             )
+            
 
-            response, _, _ = await llm_provider.generate(
+            response, cost, _ = await llm_provider.generate(
                 [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": formatted_user_prompt},
                 ]
             )
+
             feedback = self._parse_feedback(response, expected_format)
             feedback = self._attach_plagiarism_defaults(feedback)
             feedback = self._attach_default_fileds(feedback)
-            feedback["strengths"] = ["cost:0", "Feedback_LP:0.0", "Eval_LP:0.0"]
+            feedback["strengths"] = [f"cost:{cost}", "Feedback_LP:0.0", "Eval_LP:0.0"]
+            print("$$$$$$$$$$$$$$")
+            print(feedback)
 
             return feedback, model_used, self._template_used_name(template)
 
         except Exception as e:
-            error_msg = f"Error generating text feedback for submission {submission_id}: {str(e)}"
+            error_msg = f"Error generating text feedback for submission {submission_id}: {str(e)}\n{traceback.format_exc()}"
             print(f"\nError: {error_msg}")
             frappe.log_error(message=error_msg, title="Text Feedback Generation Error")
             error_feedback = self.feedback_service.create_error_feedback(str(e))
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
-            error_feedback["strengths"] = ["cost:1", "Feedback_LP:0.89", "Eval_LP:0.78"]
+            error_feedback["strengths"] = ["cost:0", "Feedback_LP:0.0", "Eval_LP:0.0"]
             return error_feedback, "N/A", "Built-in Universal Template for Error"

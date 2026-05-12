@@ -134,68 +134,6 @@ class FeedbackService:
             frappe.log_error(error_msg, "Feedback Processing Error")
             raise
 
-    def format_feedback_for_display(self, feedback: Dict) -> str:
-        """Format feedback for human-readable display."""
-        try:
-            formatted = []
-
-            # Standard fields
-            if "overall_feedback" in feedback:
-                formatted.append("Overall Feedback:")
-                formatted.append(feedback["overall_feedback"])
-
-            if "strengths" in feedback:
-                formatted.append("\nStrengths:")
-                for strength in feedback["strengths"]:
-                    formatted.append(f"- {strength}")
-
-            if "areas_for_improvement" in feedback:
-                formatted.append("\nAreas for Improvement:")
-                for area in feedback["areas_for_improvement"]:
-                    formatted.append(f"- {area}")
-
-            if "learning_objectives_feedback" in feedback:
-                formatted.append("\nLearning Objectives Feedback:")
-                for obj in feedback["learning_objectives_feedback"]:
-                    formatted.append(f"- {obj}")
-
-            if "grade_recommendation" in feedback:
-                formatted.append(
-                    f"\nGrade Recommendation: {feedback['grade_recommendation']}"
-                )
-
-            if "encouragement" in feedback:
-                formatted.append(f"\nEncouragement: {feedback['encouragement']}")
-
-            # Include any additional fields not in the standard format
-            standard_fields = [
-                "overall_feedback",
-                "strengths",
-                "areas_for_improvement",
-                "learning_objectives_feedback",
-                "grade_recommendation",
-                "encouragement",
-                "detected_type",
-                "error",
-            ]
-
-            # Process any custom fields in the feedback
-            for key, value in feedback.items():
-                if key not in standard_fields:
-                    formatted.append(f"\n{key.replace('_', ' ').title()}:")
-                    if isinstance(value, list):
-                        for item in value:
-                            formatted.append(f"- {item}")
-                    else:
-                        formatted.append(str(value))
-
-            return "\n".join(formatted)
-
-        except Exception as e:
-            error_msg = f"Error formatting feedback: {str(e)}"
-            print(f"\nError: {error_msg}")
-            return "Error formatting feedback for display. Please check the JSON feedback data."
-
     async def _update_result_status(self, feedback_request_id: str, status: str, error_message: str = None):
         """Update Feedback Request result_status"""
         if not feedback_request_id:
@@ -229,7 +167,7 @@ class FeedbackService:
             "areas_for_improvement": ["Submit original artwork created by you",
                                       "Review assignment guidelines for creative direction"],
             "learning_objectives_feedback": ["N/A - AI-generated content detected."],
-            "grade_recommendation": 0,
+            "final_grade": 0,
             "encouragement": "We believe in your creative abilities!",
             "rubric_evaluations": [{
                                         "Skill": "Content Knowledge",
@@ -274,7 +212,7 @@ class FeedbackService:
             "areas_for_improvement": ["Create original artwork for this assignment",
                                       "Review academic integrity guidelines"],
             "learning_objectives_feedback": ["N/A - Submission flagged for similarity"],
-            "grade_recommendation": 0,
+            "final_grade": 0,
             "encouragement": "Every artist develops their unique style through practice!",
             "rubric_evaluations": [{
                                         "Skill": "Content Knowledge",
@@ -312,16 +250,16 @@ class FeedbackService:
                 else:
                     feedback[field] = "No information provided"
         
-        # Validate grade_recommendation format for TAP LMS compatibility
+        # Validate final_grade format for TAP LMS compatibility
         try:
-            grade = feedback.get("grade_recommendation", 0)
+            grade = feedback.get("final_grade", 0)
             if isinstance(grade, str):
                 # Extract numeric part only
                 grade_clean = ''.join(c for c in grade if c.isdigit() or c == '.')
                 grade = float(grade_clean) if grade_clean else 0
-            feedback["grade_recommendation"] = max(0, min(100, float(grade)))
+            feedback["final_grade"] = max(0, min(100, float(grade)))
         except (ValueError, TypeError):
-            feedback["grade_recommendation"] = 0
+            feedback["final_grade"] = 0
         
         # Ensure list fields are lists
         list_fields = ["strengths", "areas_for_improvement", "learning_objectives_feedback"]
@@ -340,7 +278,7 @@ class FeedbackService:
                 fallback[field] = "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor."
             elif field == "overall_feedback_translated":
                 fallback[field] = "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor."
-            elif field == "grade_recommendation":
+            elif field == "final_grade":
                 fallback[field] = 50  # Neutral grade for technical issues
             elif field == "rubric_evaluations":
                 fallback[field] = [
@@ -374,7 +312,7 @@ class FeedbackService:
             "strengths": [f"Your submission was received successfully but system encountered an error during processing.{error_msg}"],
             "areas_for_improvement": ["No issues identified with your submission - this appears to be a technical problem"],
             "learning_objectives_feedback": ["Unable to evaluate due to system error - please resubmit"],
-            "grade_recommendation": 0,
+            "final_grade": 0,
             "encouragement": "Technical issues don't reflect your effort or ability - please try again!",
             "rubric_evaluations": [{
                                         "Skill": "Content Knowledge",

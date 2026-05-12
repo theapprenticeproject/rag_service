@@ -113,9 +113,8 @@
   },
   {
    "fieldname": "model_used",
-   "fieldtype": "Link",
-   "label": "Model Used",
-   "options": "LLM Settings"
+   "fieldtype": "Text",
+   "label": "Model Used"
   },
   {
    "fieldname": "processing_attempts",

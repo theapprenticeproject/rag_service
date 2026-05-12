@@ -26,6 +26,10 @@ def normalize_submission_payload(message_data: Dict) -> Dict:
         "submission_type": submission_type,
         "submission_url": submission_url,
         "submission_text": submission_text,
+        "expected_submission_type": message_data.get("expected_submission_type"),
+        "archetype": message_data.get("archetype"),
+        "current_week": message_data.get("current_week"),
+        "escalation_step_at_submit": message_data.get("escalation_step_at_submit"),
     }
 
 

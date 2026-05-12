@@ -4,7 +4,8 @@ import frappe
 import pika
 import json
 import asyncio
-from typing import Dict, Optional
+from datetime import datetime
+from typing import Dict
 from ..core.feedback_handler import FeedbackHandler
 from .queue_manager import QueueManager
 
@@ -17,6 +18,7 @@ class RabbitMQConsumer:
         self.processed_count = 0
         self.connection = None
         self.channel = None
+        self.dead_letter_queue = None
 
     def connect(self) -> None:
         """Establish RabbitMQ connection"""
@@ -58,12 +60,18 @@ class RabbitMQConsumer:
             self.connect()
             
             queue_name = self.settings.plagiarism_results_queue
+            self.dead_letter_queue = f"{queue_name}.dead_letter"
             
             # Declare queue to ensure it exists
             self.channel.queue_declare(
                 queue=queue_name,
                 durable=True
             )
+            self.channel.queue_declare(
+                queue=self.dead_letter_queue,
+                durable=True
+            )
+            self.channel.confirm_delivery()
             
             # Get queue information
             queue_info = self.channel.queue_declare(
@@ -112,8 +120,15 @@ class RabbitMQConsumer:
                     print(f"Parsed JSON: {json.dumps(message, indent=2)}")
             except json.JSONDecodeError as e:
                 print(f"JSON parsing error: {str(e)}")
-                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                print("Message rejected - Invalid JSON")
+                self._dead_letter_message(
+                    ch,
+                    method,
+                    properties,
+                    body,
+                    "Invalid JSON",
+                    str(e)
+                )
+                print("Message moved to dead-letter queue - Invalid JSON")
                 return
                 
             # Validate required fields
@@ -129,8 +144,15 @@ class RabbitMQConsumer:
             
             if missing_fields:
                 print(f"Missing required fields: {missing_fields}")
-                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                print("Message rejected - Missing required fields")
+                self._dead_letter_message(
+                    ch,
+                    method,
+                    properties,
+                    body,
+                    "Missing required fields",
+                    ", ".join(missing_fields)
+                )
+                print("Message moved to dead-letter queue - Missing required fields")
                 return
                 
             # Process message using feedback handler
@@ -172,9 +194,46 @@ class RabbitMQConsumer:
                 message=f"Error processing message: {str(e)}\n\nRaw message: {body}"
             )
             
-            # Reject message without requeue
-            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-            print("Message rejected")
+            try:
+                self._dead_letter_message(
+                    ch,
+                    method,
+                    properties,
+                    body,
+                    "Message processing error",
+                    str(e)
+                )
+                print("Message moved to dead-letter queue")
+            except Exception as dead_letter_error:
+                print(f"Could not dead-letter message: {str(dead_letter_error)}")
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                print("Message requeued because dead-lettering failed")
+
+    def _dead_letter_message(self, ch, method, properties, body, reason: str, details: str) -> None:
+        """Persist an unrecoverable message before removing it from the source queue."""
+        queue_name = self.settings.plagiarism_results_queue
+        dead_letter_queue = self.dead_letter_queue or f"{queue_name}.dead_letter"
+
+        ch.queue_declare(queue=dead_letter_queue, durable=True)
+        payload = {
+            "original_queue": queue_name,
+            "reason": reason,
+            "details": details,
+            "failed_at": datetime.now().isoformat(),
+            "body": body.decode("utf-8", errors="replace") if isinstance(body, bytes) else body,
+        }
+
+        ch.basic_publish(
+            exchange="",
+            routing_key=dead_letter_queue,
+            body=json.dumps(payload, ensure_ascii=False),
+            properties=pika.BasicProperties(
+                delivery_mode=2,
+                content_type="application/json",
+            ),
+            mandatory=True,
+        )
+        ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def test_connection(self) -> bool:
         """Test RabbitMQ connection"""
