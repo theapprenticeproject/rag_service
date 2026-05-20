@@ -20,6 +20,7 @@ class TextEvaluationGenerator(EvaluationGenerator):
             llm_provider, model_used = self._create_llm_provider("Gemini")
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
+            course_vertical = "Arts"
 
             template = self.get_prompt_template("text", "both", activity_type, course_vertical)
             expected_format = self._get_expected_format(template)

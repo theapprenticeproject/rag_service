@@ -177,13 +177,25 @@ class RabbitMQConsumer:
                     loop.close()
                     
             except Exception as e:
-                print(f"\nError processing submission: {str(e)}")
-                frappe.log_error(
-                    title="Submission Processing Error",
-                    message=f"Error processing submission {message['submission_id']}: {str(e)}\n\nFull message: {json.dumps(message, indent=2)}"
-                )
-                # Requeue message for retry
-                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                print(f"\n##########Error processing submission: {str(e)}")
+                # frappe.log_error(
+                #     title="Submission Processing Error",
+                #     message=f"Error processing submission {message['submission_id']}: {str(e)}\n\nFull message: {json.dumps(message, indent=2)}"
+                # )
+                try:
+                    print("\nAttempting to move message to dead-letter queue...")
+                    self._dead_letter_message(
+                        ch,
+                        method,
+                        properties,
+                        body,
+                        "Submission processing failed",
+                        str(e)
+                    )
+                    print("Message moved to dead-letter queue")
+                except Exception as dead_letter_error:
+                    print(f"Could not move message to dead-letter queue: {str(dead_letter_error)}")
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                 
         except Exception as e:
             print(f"\nError processing message: {str(e)}")
@@ -234,6 +246,7 @@ class RabbitMQConsumer:
             mandatory=True,
         )
         ch.basic_ack(delivery_tag=method.delivery_tag)
+
 
     def test_connection(self) -> bool:
         """Test RabbitMQ connection"""

@@ -97,14 +97,6 @@ class FeedbackService:
                 "student_id": feedback_request.student_id,
                 "assignment_id": feedback_request.assignment_id,
                 "feedback": feedback,
-                # "is_plagiarized": feedback['plagiarism_output']['is_plagiarized'],
-                # "is_ai_generated": feedback['plagiarism_output']['is_ai_generated'],
-                # "match_type": feedback['plagiarism_output']['match_type'],
-                # "plagiarism_source": feedback['plagiarism_output']['plagiarism_source'],
-                # "similarity_score": feedback['plagiarism_output']['similarity_score'],
-                # "ai_detection_source": feedback['plagiarism_output']['ai_detection_source'],
-                # "ai_confidence": feedback['plagiarism_output']['ai_confidence'],
-
                 "generated_at": feedback_request.completed_at.isoformat()
                 if feedback_request.completed_at
                 else datetime.now().isoformat(),
@@ -168,6 +160,7 @@ class FeedbackService:
                                       "Review assignment guidelines for creative direction"],
             "learning_objectives_feedback": ["N/A - AI-generated content detected."],
             "final_grade": 0,
+            "submission_validity": "Invalid" ,
             "encouragement": "We believe in your creative abilities!",
             "rubric_evaluations": [{
                                         "Skill": "Content Knowledge",
@@ -213,6 +206,7 @@ class FeedbackService:
                                       "Review academic integrity guidelines"],
             "learning_objectives_feedback": ["N/A - Submission flagged for similarity"],
             "final_grade": 0,
+            "submission_validity": "Invalid" ,
             "encouragement": "Every artist develops their unique style through practice!",
             "rubric_evaluations": [{
                                         "Skill": "Content Knowledge",
@@ -313,6 +307,7 @@ class FeedbackService:
             "areas_for_improvement": ["No issues identified with your submission - this appears to be a technical problem"],
             "learning_objectives_feedback": ["Unable to evaluate due to system error - please resubmit"],
             "final_grade": 0,
+            "submission_validity": "Valid" ,
             "encouragement": "Technical issues don't reflect your effort or ability - please try again!",
             "rubric_evaluations": [{
                                         "Skill": "Content Knowledge",

@@ -43,11 +43,6 @@ class FeedbackHandler:
                 feedback_request_id=request_id
             )
             
-            print("\nFeedback generated, processing feedback...")
-            # Process and deliver feedback
-            await self.feedback_service.process_feedback(request_id, feedback, model_used, template_used)
-            print("\nFeedback processing completed")
-            
         except Exception as e:
             error_msg = f"Error handling submission: {str(e)}"
             print(f"\nError: {error_msg}")
@@ -56,7 +51,31 @@ class FeedbackHandler:
             # Mark request as failed if it exists
             if request_id and frappe.db.exists("Feedback Request", request_id):
                 await self.mark_request_failed(request_id, str(e))
-            raise
+            template_used = "Built-in Universal Template for Error"
+            feedback = self.feedback_service.create_error_feedback(str(e))
+            feedback = self._attach_plagiarism_defaults(feedback)
+            feedback['strengths'] = ["cost:1", f"Feedback_LP:0.89", f"Eval_LP:0.78"]
+            model_used = "N/A"
+            raise Exception(error_msg)
+        finally:
+            print("\nFeedback generated, processing feedback...")
+            # Process and deliver feedback
+            await self.feedback_service.process_feedback(request_id, feedback, model_used, template_used)
+            print("\nFeedback processing completed")
+
+    def _attach_plagiarism_defaults(self, feedback: Dict) -> Dict:
+        feedback["plagiarism_output"] = {
+            "is_plagiarized": False,
+            "is_ai_generated": False,
+            "match_type": "original",
+            "plagiarism_source": "none",
+            "similarity_score": 0.0,
+            "ai_detection_source": "none",
+            "ai_confidence": 0.0,
+            "similar_sources": [],
+        }
+        return feedback
+
 
     async def create_feedback_request(self, message_data: Dict, submission_data: Dict) -> str:
         """Create or update feedback request"""
