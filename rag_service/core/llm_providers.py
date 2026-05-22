@@ -4,7 +4,7 @@ from together import Together
 import json
 from typing import Any, List, Dict, Optional
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from .llm_interface import BaseLLMInterface
 import vertexai
 from google.oauth2 import service_account
