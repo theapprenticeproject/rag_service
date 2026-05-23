@@ -64,7 +64,13 @@ class QueueManager:
             print(f"Queue: {self.settings.feedback_results_queue}")
             
             self.connect()
-            
+
+            # Declare the queue to ensure it exists (idempotent — safe to call even if already declared)
+            self.channel.queue_declare(
+                queue=self.settings.feedback_results_queue,
+                durable=True
+            )
+
             # Add metadata to feedback
             message = {
                 **feedback_data,
