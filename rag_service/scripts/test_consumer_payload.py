@@ -24,8 +24,8 @@ video_original = "https://storage.googleapis.com/bucket_tap_1/uploads/Activity2_
 # EDIT THE PAYLOAD BELOW TO TEST DIFFERENT DATA
 # ============================================================================
 PAYLOAD = {
-  "submission_id": "SUB-2605112507",
-  "student_id": "ST00002495",
+  "submission_id": "SUB-2605112502",
+  "student_id": "ST00051387",
   "submission_type": "text",
   "submission_text": "where to?",
   "submission_url": None,
@@ -36,7 +36,7 @@ PAYLOAD = {
   "archetype": "Dormant",
   "experiment_arm": "default",
   "expected_submission_type": "image",
-  "language": "Hindi",
+  "language": "Punjabi",
   "batch": "1-BT0205",
   "current_week": 1,
   "current_path": "Core",
@@ -47,7 +47,7 @@ PAYLOAD = {
   "similarity_score": 0.0,
   "is_plagiarized": False,
   "match_type": "original",
-  "assignment_id": "VA_L1_CA1-Basic",
+  "assignment_id": "GetReadyForScratchJr Main-Basic",
   "is_ai_generated": False,
   "ai_detection_source": "",
   "ai_confidence": 0.0,
