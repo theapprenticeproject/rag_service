@@ -1,9 +1,9 @@
 # rag_service/rag_service/feedback_utils/text_evaluation.py
 
+import traceback
 from typing import Dict, Tuple
 
 import frappe
-import traceback
 
 from .evaluation_generation import EvaluationGenerator
 
@@ -17,12 +17,14 @@ class TextEvaluationGenerator(EvaluationGenerator):
         try:
             print("\n=== Starting AI Feedback Generation (Text) ===")
 
-            llm_provider, model_used = self._create_llm_provider("Gemini")
+            llm_provider, model_used = self._create_llm_provider()
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
             course_vertical = "Arts"
 
-            template = self.get_prompt_template("text", "both", activity_type, course_vertical)
+            template = self.get_prompt_template(
+                "text", "both", activity_type, course_vertical
+            )
             expected_format = self._get_expected_format(template)
             system_prompt, formatted_user_prompt = self._format_prompts(
                 template,
@@ -30,7 +32,6 @@ class TextEvaluationGenerator(EvaluationGenerator):
                 submission_data,
                 [],
             )
-            
 
             response, cost, _ = await llm_provider.generate(
                 [

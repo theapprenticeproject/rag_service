@@ -1,11 +1,12 @@
 # rag_service/rag_service/feedback_utils/audio_evaluation.py
 
+import os
 from typing import Dict, Tuple
 
 import frappe
 
-from .evaluation_generation import EvaluationGenerator
 from ..utils.gcp_service_client import GCPServiceClient
+from .evaluation_generation import EvaluationGenerator
 
 
 class AudioEvaluationGenerator(EvaluationGenerator):
@@ -19,11 +20,13 @@ class AudioEvaluationGenerator(EvaluationGenerator):
         try:
             print("\n=== Starting AI Feedback Generation (Audio) ===")
 
-            llm_provider, model_used = self._create_llm_provider("Gemini")
+            llm_provider, model_used = self._create_llm_provider()
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
 
-            template = self.get_prompt_template("audio", "both", activity_type, course_vertical)
+            template = self.get_prompt_template(
+                "audio", "both", activity_type, course_vertical
+            )
             expected_format = self._get_expected_format(template)
             system_prompt, formatted_user_prompt = self._format_prompts(
                 template,
@@ -33,16 +36,29 @@ class AudioEvaluationGenerator(EvaluationGenerator):
             )
             combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
 
-            media_service = GCPServiceClient()
-            media_asset = media_service.download_media(submission_data["submission_url"])
-            response = await llm_provider.generate_with_audio(
-                media_asset,
-                combined_prompt,
-                mime_type=media_asset["mime_type"],
-            )
+            if os.environ.get("STUB_MODE") == "1":
+                print("STUB_MODE: Bypassing GCS download, calling LLM with URL string")
+                response = await llm_provider.generate_with_audio(
+                    submission_data["submission_url"],
+                    combined_prompt,
+                    mime_type="audio/mpeg",
+                )
+            else:
+                media_service = GCPServiceClient()
+                media_asset = media_service.download_media(
+                    submission_data["submission_url"]
+                )
+                response = await llm_provider.generate_with_audio(
+                    media_asset,
+                    combined_prompt,
+                    mime_type=media_asset["mime_type"],
+                )
+
             raw_text = response.text
             self.cost = llm_provider.calculate_cost(response.to_dict())
-            self.log_prob_feedback = response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            self.log_prob_feedback = (
+                response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            )
 
             feedback = self._parse_feedback(raw_text, expected_format)
             feedback = self._attach_plagiarism_defaults(feedback)

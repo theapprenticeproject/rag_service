@@ -4,7 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Dict, Optional, Tuple
-from urllib.parse import urlparse, unquote
+from urllib.parse import unquote, urlparse
 
 import frappe
 from google.cloud import storage
@@ -15,6 +15,12 @@ class GCPServiceClient:
     """Shared GCP client factory/helpers using credentials stored in Frappe."""
 
     def __init__(self):
+        self.is_stub = os.environ.get("STUB_MODE") == "1"
+        if self.is_stub:
+            self.client = None
+            self.key_data = {}
+            return
+
         settings = frappe.get_single("GCS Settings")
         raw_key = (settings.get("credentials_json") or "").strip()
         if not raw_key:
@@ -23,13 +29,41 @@ class GCPServiceClient:
         try:
             self.key_data = json.loads(raw_key)
         except json.JSONDecodeError as exc:
-            raise ValueError("GCS Settings.credentials_json must contain valid JSON") from exc
+            raise ValueError(
+                "GCS Settings.credentials_json must contain valid JSON"
+            ) from exc
 
         self.project_id = settings.get("project_id") or self.key_data.get("project_id")
-        credentials = service_account.Credentials.from_service_account_info(self.key_data)
+        credentials = service_account.Credentials.from_service_account_info(
+            self.key_data
+        )
         self.client = storage.Client(project=self.project_id, credentials=credentials)
 
     def download_media(self, media_url: str) -> Dict:
+        if self.is_stub:
+            print(f"STUB_MODE: Simulating media download for {media_url}")
+            # Try to actually download if it's an http url, else return mock
+            content = b""
+            mime_type = "image/png"
+            if media_url.startswith("http"):
+                try:
+                    import requests
+
+                    resp = requests.get(media_url, timeout=5)
+                    content = resp.content
+                    mime_type = resp.headers.get("content-type", "image/png")
+                except:
+                    pass
+
+            return {
+                "bucket": "stub-bucket",
+                "object_name": "stub-object",
+                "local_path": None,
+                "mime_type": mime_type,
+                "content": content,
+                "filename": "stub-file",
+            }
+
         bucket_name, object_name = self._parse_gcs_url(media_url)
         blob = self.client.bucket(bucket_name).blob(object_name)
 
@@ -38,7 +72,11 @@ class GCPServiceClient:
             temp_path = temp_file.name
 
         blob.download_to_filename(temp_path)
-        mime_type = blob.content_type or mimetypes.guess_type(object_name)[0] or "application/octet-stream"
+        mime_type = (
+            blob.content_type
+            or mimetypes.guess_type(object_name)[0]
+            or "application/octet-stream"
+        )
         with open(temp_path, "rb") as media_file:
             content = media_file.read()
 

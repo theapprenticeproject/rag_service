@@ -1,16 +1,16 @@
 # rag_service/rag_service/feedback_utils/image_evaluation_both.py
 
+import os
 from typing import Dict, Tuple
 
 import frappe
 
-from .evaluation_generation import EvaluationGenerator
 from ..utils.gcp_service_client import GCPServiceClient
+from .evaluation_generation import EvaluationGenerator
 
 
 class ImageEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for image submissions."""
-    
 
     async def generate_feedback(
         self, assignment_context: Dict, submission_data: Dict, submission_id: str
@@ -20,13 +20,14 @@ class ImageEvaluationGenerator(EvaluationGenerator):
         try:
             print("\n=== Starting AI Feedback Generation (Image) ===")
 
-            llm_provider, model_used = self._create_llm_provider("Gemini")
-            
+            llm_provider, model_used = self._create_llm_provider()
+
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
 
-
-            template = self.get_prompt_template("image", "both", activity_type, course_vertical)
+            template = self.get_prompt_template(
+                "image", "both", activity_type, course_vertical
+            )
             expected_format = self._get_expected_format(template)
 
             system_prompt, formatted_user_prompt = self._format_prompts(
@@ -37,24 +38,41 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             )
             combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
 
-            media_service = GCPServiceClient()
-            media_asset = media_service.download_media(submission_data["submission_url"])
+            if os.environ.get("STUB_MODE") == "1":
+                print("STUB_MODE: Bypassing GCS download, calling LLM with URL string")
+                response = await llm_provider.generate_with_vision(
+                    submission_data["submission_url"],
+                    combined_prompt,
+                    mime_type="image/png",
+                )
+            else:
+                media_service = GCPServiceClient()
+                media_asset = media_service.download_media(
+                    submission_data["submission_url"]
+                )
 
-            response = await llm_provider.generate_with_vision(
-                media_asset,
-                combined_prompt,
-                mime_type=media_asset["mime_type"],
-            )
+                response = await llm_provider.generate_with_vision(
+                    media_asset,
+                    combined_prompt,
+                    mime_type=media_asset["mime_type"],
+                )
+
             raw_text = response.text
             self.cost = llm_provider.calculate_cost(response.to_dict())
 
-            self.log_prob_feedback = response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            self.log_prob_feedback = (
+                response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            )
 
             print(f"\nRaw LLM Output:\n{raw_text}")
             feedback = self._parse_feedback(raw_text, expected_format)
             feedback = self._attach_plagiarism_defaults(feedback)
             feedback = self._attach_default_fileds(feedback)
-            feedback['strengths'] = [f"cost:{self.cost}", f"Feedback_LP:{self.log_prob_feedback}", f"Eval_LP:{0.0}"]
+            feedback["strengths"] = [
+                f"cost:{self.cost}",
+                f"Feedback_LP:{self.log_prob_feedback}",
+                f"Eval_LP:{0.0}",
+            ]
 
             template_used = self._template_used_name(template)
 
@@ -69,7 +87,11 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             template_used = "Built-in Universal Template for Error"
             error_feedback = self.feedback_service.create_error_feedback(str(e))
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
-            error_feedback['strengths'] = ["cost:1", f"Feedback_LP:0.89", f"Eval_LP:0.78"]
+            error_feedback["strengths"] = [
+                "cost:1",
+                f"Feedback_LP:0.89",
+                f"Eval_LP:0.78",
+            ]
             return error_feedback, "N/A", template_used
         finally:
             if media_service:
