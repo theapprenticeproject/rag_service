@@ -263,39 +263,39 @@ class FeedbackService:
         
         return feedback
 
-    def create_fallback_feedback(self, expected_format: Dict) -> Dict:
-        """Create structured fallback when JSON parsing fails"""
+    # def create_fallback_feedback(self, expected_format: Dict) -> Dict:
+    #     """Create structured fallback when JSON parsing fails"""
         
-        fallback = {}
-        for field, default_value in expected_format.items():
-            if field == "overall_feedback":
-                fallback[field] = "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor."
-            elif field == "overall_feedback_translated":
-                fallback[field] = "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor."
-            elif field == "final_grade":
-                fallback[field] = 50  # Neutral grade for technical issues
-            elif field == "rubric_evaluations":
-                fallback[field] = [
-                {
-                "skill": "Content Knowledge",
-                "grade_value": 2,
-                "observation": "Neutral evaluation due to processing issue"
-                }
-            ]
-            elif isinstance(default_value, list):
-                if "strength" in field:
-                    fallback[field] = ["Your submission was received and processed"]
-                elif "improvement" in field:
-                    fallback[field] = ["Please ensure your submission clearly shows your work"]
-                else:
-                    fallback[field] = ["Unable to provide specific feedback due to processing issue"]
-            else:
-                if field == "encouragement":
-                    fallback[field] = "Technical issues don't reflect your effort - please try resubmitting!"
-                else:
-                    fallback[field] = "Processing issue - please resubmit for detailed feedback"
+    #     fallback = {}
+    #     for field, default_value in expected_format.items():
+    #         if field == "overall_feedback":
+    #             fallback[field] = "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor."
+    #         elif field == "overall_feedback_translated":
+    #             fallback[field] = "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor."
+    #         elif field == "final_grade":
+    #             fallback[field] = 50  # Neutral grade for technical issues
+    #         elif field == "rubric_evaluations":
+    #             fallback[field] = [
+    #             {
+    #             "skill": "Content Knowledge",
+    #             "grade_value": 2,
+    #             "observation": "Neutral evaluation due to processing issue"
+    #             }
+    #         ]
+    #         elif isinstance(default_value, list):
+    #             if "strength" in field:
+    #                 fallback[field] = ["Your submission was received and processed"]
+    #             elif "improvement" in field:
+    #                 fallback[field] = ["Please ensure your submission clearly shows your work"]
+    #             else:
+    #                 fallback[field] = ["Unable to provide specific feedback due to processing issue"]
+    #         else:
+    #             if field == "encouragement":
+    #                 fallback[field] = "Technical issues don't reflect your effort - please try resubmitting!"
+    #             else:
+    #                 fallback[field] = "Processing issue - please resubmit for detailed feedback"
         
-        return fallback
+    #     return fallback
 
     def create_error_feedback(self, error_msg: str) -> Dict:
         """Create feedback for system errors"""

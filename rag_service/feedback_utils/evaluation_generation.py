@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import frappe
 from ..core.llm_providers import create_llm_provider
@@ -339,7 +339,7 @@ class EvaluationGenerator:
             feedback = json.loads(cleaned_text)
             feedback = self.feedback_service.validate_feedback_structure(feedback, expected_format)
         except json.JSONDecodeError:
-            feedback = self.feedback_service.create_fallback_feedback(expected_format)
+            feedback = self.feedback_service.create_error_feedback(raw_text)
 
         return feedback
 
@@ -379,15 +379,24 @@ class EvaluationGenerator:
             return
         frappe.db.set_value("Prompt Segment", segment_name, "last_used", datetime.now(), update_modified=False)
 
-    def _create_llm_provider(self, llm_provider_name: str = "Gemini") -> Tuple[Any, str]:
+    def _create_llm_provider(
+        self,
+        llm_provider_name: str = "Gemini",
+        model_name: Optional[str] = None,
+    ) -> Tuple[Any, str]:
+        filters = {"is_active": 1, "provider": llm_provider_name}
+        if model_name:
+            filters["model_name"] = model_name
+
         llm_settings = frappe.get_list(
             "LLM Settings",
-            filters={"is_active": 1, "provider": llm_provider_name},
+            filters=filters,
             limit=1,
         )
 
         if not llm_settings:
-            raise Exception(f"No active {llm_provider_name} configuration found")
+            model_msg = f" with model {model_name}" if model_name else ""
+            raise Exception(f"No active {llm_provider_name}{model_msg} configuration found")
 
         settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
         model_used = llm_settings[0].name
