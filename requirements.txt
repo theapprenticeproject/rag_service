@@ -1,4 +1,4 @@
-pikka
+pika
 langchain_openai
 aiohttp
 requests
