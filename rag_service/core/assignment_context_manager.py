@@ -129,7 +129,7 @@ class AssignmentContextManager:
                 print(f"Error: {error_msg}")
                 raise Exception(error_msg)
             
-            data = response.json()["message"]
+            data = response.json()
             # data = {'assignment': {'name': 'Pop Art', 'program_name': 'Summer Program 2026', 'description': 'Students will create a Pop Art–style artwork inspired by Andy Warhol by drawing one simple object four times on their paper and coloring each version using different pairs of complementary colors. They will experiment with bold outlines, bright contrasts, and simple background patterns to make their artwork look vibrant and balanced.', 'assignment_type': 'Written', 'activity_type': 'Regular', 'course_vertical': 'Arts', 'difficulty_tier': 'Remedial', 'submission_guidelines': '', 'submission_rules': [{'submission_title': 'Emoji', 'allowed_submission_types': ['emoji'], 'guided_text': 'Send a 👍 if you enjoyed the activity, or 👎 if you did not enjoy it', 'unguided_text': 'Please send any emoji of your choice!', 'valid_criteria': '👍 or 👎', 'invalid_criteria': 'Any emoji other than 👍 or 👎'}, {'submission_title': 'Type a word or send a voice note', 'allowed_submission_types': ['text', 'audio'], 'guided_text': 'Send a text or voice note saying "Creative" if you liked it, or "Boring" if you didn’t.', 'unguided_text': 'What do you think of the Pop Art activity? Share in one word or send a voice note', 'valid_criteria': 'Creative, Boring', 'invalid_criteria': 'Any word other than creative, boring'}, {'submission_title': 'Taking a picture of anything around you', 'allowed_submission_types': ['image'], 'guided_text': 'Share a picture of anything in red color', 'unguided_text': 'Share a picture of anything around you', 'valid_criteria': 'Picture of anything in red color', 'invalid_criteria': 'Anything other which is not red in color'}, {'submission_title': 'Send a voice/text summary Related to Artefact', 'allowed_submission_types': ['text', 'audio'], 'guided_text': 'Type or send a voice note and tell us one complementary color pair', 'unguided_text': '', 'valid_criteria': 'red–green, blue–orange, yellow–purple', 'invalid_criteria': 'wrong pair, single color, sentences'}, {'submission_title': 'Take a picture or video of the created artefact Related Artefact', 'allowed_submission_types': ['image', 'video'], 'guided_text': 'Don’t forget to check if:\n\nYou drew the same object 4 times\nYou used 2 complementary color pairs\nYou added bold outlines\nYour coloring is neat and filled', 'unguided_text': '', 'valid_criteria': '- Clear artwork using complementary colors\n- Neat coloring and bold outlines\n- Complete artwork visible\n\nAll criteria needs to be fulfilled', 'invalid_criteria': '- Missing complementary colors\n- Messy or uneven coloring\n- Incomplete artwork\n- Unclear/cropped image'}], 'reference_images': [], 'max_score': None, 'rubrics': {}}, 'learning_objectives': []}
             # print("#############")
             # print(data)
@@ -163,7 +163,7 @@ class AssignmentContextManager:
                 print(f"Error: {error_msg}")
                 raise Exception(error_msg)
             
-            data = response.json()["message"]
+            data = response.json()
             # data = {'student_id': 'ST00000182', 'grade': '5', 'level': 'L1', 'language': 'Hindi'}
             
             print("Student API request successful")
