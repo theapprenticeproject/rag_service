@@ -24,7 +24,7 @@ video_original = "https://storage.googleapis.com/bucket_tap_1/uploads/Activity2_
 # EDIT THE PAYLOAD BELOW TO TEST DIFFERENT DATA
 # ============================================================================
 PAYLOAD = {
-   "submission_id": "SUB-2606018077816",
+   "submission_id": "SUB-2606018077817",
    "student_id": "ST00483909",
    "submission_type": "emoji",
    "submission_text": "how do you start on scratch jr?",
@@ -47,7 +47,7 @@ PAYLOAD = {
    "similarity_score": 0.0,
    "is_plagiarized": False,
    "match_type": "original",
-   "assignment_id": "Build Your First Animation 🐱-Basic",
+   "assignment_id": "Build Your Animation 🐱-Basic",
    "is_ai_generated": False,
    "ai_detection_source": "",
    "ai_confidence": 0.0,
@@ -64,7 +64,7 @@ def get_rabbitmq_settings():
             "host": "rabbit-01.lmq.cloudamqp.com",
             "port": "5672",
             "username": "aoafhbrm",
-            "password": "****",
+            "password": "AuGZ99VPN4mzGJ7NoEfNxsqh8sRFz7Xi",
             "virtual_host": "aoafhbrm",
             "queue": "plg_result_q",
         }
