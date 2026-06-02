@@ -12,6 +12,16 @@ from ..utils.submission_data import (
     format_submission_text_for_prompt,
 )
 
+EXPECTED_SUBMISSION_LABELS = {
+    "emoji": ["emoji"],
+    "word_text_voice": ["text", "audio"],
+    "image": ["image"],
+    "summary_text_voice": ["text", "audio"],
+    "photo_video_artefact": ["image", "video"],
+    "video": ["image", "video"],
+}
+
+
 class EvaluationGenerator:
     """Shared evaluation generation utilities for different media types."""
 
@@ -233,6 +243,35 @@ class EvaluationGenerator:
                 rendered = rendered.replace(placeholder, str(value))
         return rendered
 
+    def _filter_submission_rules(
+        self,
+        assignment_context: Dict,
+        submission_data: Dict,
+    ) -> Dict[str, Any]:
+        submission_rules = assignment_context.get("assignment", {}).get("submission_rules", [])
+        if isinstance(submission_rules, str):
+            try:
+                submission_rules = json.loads(submission_rules)
+            except json.JSONDecodeError:
+                return {}
+
+        if not isinstance(submission_rules, list):
+            return {}
+
+        expected_submission_type = submission_data.get("expected_submission_type", "")
+        allowed_types = set(EXPECTED_SUBMISSION_LABELS.get(expected_submission_type, []))
+
+        for rule in submission_rules:
+            if allowed_types and not allowed_types.intersection(rule.get("allowed_submission_types") or []):
+                continue
+
+            return {
+                "valid_criteria": rule.get("valid_criteria"),
+                "invalid_criteria": rule.get("invalid_criteria"),
+            }
+
+        return {}
+
     def _build_prompt_vars(
         self,
         assignment_context: Dict,
@@ -260,7 +299,7 @@ class EvaluationGenerator:
             "submission_type": submission_data.get("submission_type", ""),
             "submission_text": submission_data.get("submission_text", "") or "",
             "submission_text_context": format_submission_text_for_prompt(submission_data),
-            "submission_rules": assignment_context.get("assignment", {}).get("submission_rules", []),
+            "submission_rules": self._filter_submission_rules(assignment_context, submission_data),
             "expected_submission_type": submission_data.get("expected_submission_type", ""),
             "archetype": submission_data.get("archetype"),
             "current_week": submission_data.get("current_week"),
