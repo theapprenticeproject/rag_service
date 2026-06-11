@@ -5,6 +5,11 @@ app_description = "an advanced Retrieval-Augmented Generation (RAG) solution bui
 app_email = "mail@evalix.xyz"
 app_license = "mit"
 
+# ── SRE Monitoring ────────────────────────────────────────────────────────────
+before_request = ["rag_service.middleware.before_request"]
+after_request  = ["rag_service.middleware.after_request"]
+on_exception   = ["rag_service.middleware.on_exception"]
+
 
 commands = [
     "rag_service.rag_service.commands.consumer.commands"
@@ -201,8 +206,7 @@ commands = [
 
 # Request Events
 # ----------------
-# before_request = ["rag_service.utils.before_request"]
-# after_request = ["rag_service.utils.after_request"]
+# before_request and after_request are registered above via SRE Monitoring block
 
 # Job Events
 # ----------
