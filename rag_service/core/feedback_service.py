@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Dict
 from ..feedback_utils.evaluation_generation import EvaluationGenerator
 from ..utils.queue_manager import QueueManager
+import time
+from ..monitoring import record_llm_call
 
 class FeedbackService:
     def __init__(self):
@@ -47,9 +49,28 @@ class FeedbackService:
                 # Continue with normal feedback generation for original work
                 else:
                     result_status = "Success - Original"
-                    feedback, model_used, tempalate_used = await self.evaluation_generator.generate_ai_feedback(
-                        assignment_context, submission_data, submission_id
-                    )
+                    _llm_t0 = time.monotonic()
+                    try:
+                        feedback, model_used, tempalate_used = await self.evaluation_generator.generate_ai_feedback(
+                            assignment_context, submission_data, submission_id
+                        )
+                        record_llm_call(
+                            submission_id=submission_id,
+                            provider=model_used,
+                            model=model_used,
+                            status="success",
+                            duration_ms=(time.monotonic() - _llm_t0) * 1000,
+                        )
+                    except Exception as _llm_err:
+                        record_llm_call(
+                            submission_id=submission_id,
+                            provider="unknown",
+                            model="unknown",
+                            status="error",
+                            duration_ms=(time.monotonic() - _llm_t0) * 1000,
+                            error=str(_llm_err),
+                        )
+                        raise
             
             feedback["translation_language"] = assignment_context["student"].get("language", "English")
             await self._update_result_status(feedback_request_id, result_status)
