@@ -48,15 +48,9 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             )
             combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
 
-            if os.environ.get("STUB_MODE") == "1":
-                print("STUB_MODE: Bypassing GCS vision call, using URL string")
-                response = await llm_provider.generate_with_vision(
-                    submission_url, combined_prompt
-                )
-            else:
-                response = await llm_provider.generate_with_vision(
-                    submission_url, combined_prompt
-                )
+            response = await llm_provider.generate_with_vision(
+                submission_url, combined_prompt
+            )
 
             raw_text = response.text
             cost = llm_provider.calculate_cost(response.to_dict())

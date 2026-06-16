@@ -39,24 +39,16 @@ class VideoEvaluationGenerator(EvaluationGenerator):
             )
             combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
 
-            if os.environ.get("STUB_MODE") == "1":
-                print("STUB_MODE: Bypassing GCS download, calling LLM with URL string")
-                response = await llm_provider.generate_with_video(
-                    submission_data["submission_url"],
-                    combined_prompt,
-                    mime_type="video/mp4",
-                )
-            else:
-                media_service = GCPServiceClient()
-                media_asset = media_service.download_media(
-                    submission_data["submission_url"]
-                )
+            media_service = GCPServiceClient()
+            media_asset = media_service.download_media(
+                submission_data["submission_url"]
+            )
 
-                response = await llm_provider.generate_with_video(
-                    media_asset,
-                    combined_prompt,
-                    mime_type=media_asset["mime_type"],
-                )
+            response = await llm_provider.generate_with_video(
+                media_asset,
+                combined_prompt,
+                mime_type=media_asset["mime_type"],
+            )
 
             raw_text = response.text
             self.cost = llm_provider.calculate_cost(response.to_dict())
