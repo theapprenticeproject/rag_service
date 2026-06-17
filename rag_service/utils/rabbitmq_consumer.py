@@ -5,7 +5,7 @@ import pika
 import json
 import asyncio
 from datetime import datetime
-from typing import Dict
+from typing import Any, Dict, Optional
 from ..core.feedback_handler import FeedbackHandler
 from .queue_manager import QueueManager
 
@@ -106,6 +106,13 @@ class RabbitMQConsumer:
 
     def process_message(self, ch, method, properties, body) -> None:
         """Process incoming messages"""
+        message = None
+        fallback_message = self._prepare_failure_outgoing_message(
+            message=None,
+            body=body,
+            reason="Message processing failed",
+        )
+
         try:
             print(f"\n=== Processing Message {self.processed_count + 1} ===")
             
@@ -116,19 +123,24 @@ class RabbitMQConsumer:
             # Parse message
             try:
                 message = json.loads(body)
+                fallback_message = self._prepare_failure_outgoing_message(
+                    message=message,
+                    body=body,
+                    reason="Message processing failed",
+                )
                 if self.debug:
                     print(f"Parsed JSON: {json.dumps(message, indent=2)}")
             except json.JSONDecodeError as e:
                 print(f"JSON parsing error: {str(e)}")
-                self._dead_letter_message(
-                    ch,
-                    method,
-                    properties,
-                    body,
-                    "Invalid JSON",
-                    str(e)
+                self._handle_failed_message(
+                    ch=ch,
+                    method=method,
+                    properties=properties,
+                    body=body,
+                    fallback_message=fallback_message,
+                    reason="Invalid JSON",
+                    details=str(e),
                 )
-                print("Message moved to dead-letter queue - Invalid JSON")
                 return
                 
             # Validate required fields
@@ -144,15 +156,15 @@ class RabbitMQConsumer:
             
             if missing_fields:
                 print(f"Missing required fields: {missing_fields}")
-                self._dead_letter_message(
-                    ch,
-                    method,
-                    properties,
-                    body,
-                    "Missing required fields",
-                    ", ".join(missing_fields)
+                self._handle_failed_message(
+                    ch=ch,
+                    method=method,
+                    properties=properties,
+                    body=body,
+                    fallback_message=fallback_message,
+                    reason="Missing required fields",
+                    details=", ".join(missing_fields),
                 )
-                print("Message moved to dead-letter queue - Missing required fields")
                 return
                 
             # Process message using feedback handler
@@ -182,20 +194,15 @@ class RabbitMQConsumer:
                 #     title="Submission Processing Error",
                 #     message=f"Error processing submission {message['submission_id']}: {str(e)}\n\nFull message: {json.dumps(message, indent=2)}"
                 # )
-                try:
-                    print("\nAttempting to move message to dead-letter queue...")
-                    self._dead_letter_message(
-                        ch,
-                        method,
-                        properties,
-                        body,
-                        "Submission processing failed",
-                        str(e)
-                    )
-                    print("Message moved to dead-letter queue")
-                except Exception as dead_letter_error:
-                    print(f"Could not move message to dead-letter queue: {str(dead_letter_error)}")
-                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                self._handle_failed_message(
+                    ch=ch,
+                    method=method,
+                    properties=properties,
+                    body=body,
+                    fallback_message=fallback_message,
+                    reason="Submission processing failed",
+                    details=str(e),
+                )
                 
         except Exception as e:
             print(f"\nError processing message: {str(e)}")
@@ -206,20 +213,94 @@ class RabbitMQConsumer:
                 message=f"Error processing message: {str(e)}\n\nRaw message: {body}"
             )
             
+            self._handle_failed_message(
+                ch=ch,
+                method=method,
+                properties=properties,
+                body=body,
+                fallback_message=fallback_message,
+                reason="Message processing error",
+                details=str(e),
+            )
+
+    def _prepare_failure_outgoing_message(
+        self,
+        message: Optional[Dict[str, Any]],
+        body: Any,
+        reason: str,
+        details: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Build the fallback TAP LMS payload before risky processing starts."""
+        error_text = details or reason
+        feedback = self.feedback_handler.feedback_service.create_error_feedback(error_text)
+        source = message or {}
+
+        return {
+            "submission_id": source.get("submission_id"),
+            "student_id": source.get("student_id"),
+            "assignment_id": source.get("assignment_id"),
+            "status": "Failed",
+            "failure_reason": reason,
+            "failure_details": details,
+            "feedback": feedback,
+            "generated_at": datetime.now().isoformat(),
+            "raw_message": self._safe_body_text(body),
+        }
+
+    def _handle_failed_message(
+        self,
+        ch,
+        method,
+        properties,
+        body,
+        fallback_message: Dict[str, Any],
+        reason: str,
+        details: str,
+    ) -> None:
+        """
+        Publish failure response before removing the source message.
+        If the outgoing publish cannot be confirmed, requeue the source message.
+        """
+        failure_message = {
+            **fallback_message,
+            "status": "Failed",
+            "failure_reason": reason,
+            "failure_details": details,
+            "feedback": self.feedback_handler.feedback_service.create_error_feedback(details),
+            "generated_at": datetime.now().isoformat(),
+        }
+
+        try:
+            print("\nPublishing failure response to outgoing queue...")
+            self.queue_manager.send_feedback_to_tap(failure_message)
+            print("Failure response published to outgoing queue")
+        except Exception as publish_error:
+            print(f"Could not publish failure response: {str(publish_error)}")
             try:
-                self._dead_letter_message(
-                    ch,
-                    method,
-                    properties,
-                    body,
-                    "Message processing error",
-                    str(e)
-                )
-                print("Message moved to dead-letter queue")
-            except Exception as dead_letter_error:
-                print(f"Could not dead-letter message: {str(dead_letter_error)}")
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-                print("Message requeued because dead-lettering failed")
+                print("Message requeued because failure response was not published")
+            except Exception as nack_error:
+                print(f"Could not requeue message after publish failure: {str(nack_error)}")
+            return
+
+        try:
+            print("\nAttempting to move message to dead-letter queue...")
+            self._dead_letter_message(
+                ch,
+                method,
+                properties,
+                body,
+                reason,
+                details,
+            )
+            print("Message moved to dead-letter queue")
+        except Exception as dead_letter_error:
+            print(f"Could not move message to dead-letter queue: {str(dead_letter_error)}")
+
+        try:
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        except Exception as ack_error:
+            print(f"Could not acknowledge message after failure handling: {str(ack_error)}")
 
     def _dead_letter_message(self, ch, method, properties, body, reason: str, details: str) -> None:
         """Persist an unrecoverable message before removing it from the source queue."""
@@ -245,7 +326,11 @@ class RabbitMQConsumer:
             ),
             mandatory=True,
         )
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+
+    def _safe_body_text(self, body: Any) -> str:
+        if isinstance(body, bytes):
+            return body.decode("utf-8", errors="replace")
+        return str(body)
 
 
     def test_connection(self) -> bool:

@@ -20,8 +20,11 @@ class VideoEvaluationGenerator(EvaluationGenerator):
         try:
             print("\n=== Starting AI Feedback Generation (Video) ===")
 
-            llm_provider, model_used = self._create_llm_provider()
-
+            llm_provider, model_used = self._create_llm_provider(
+                "Gemini",
+                model_name="gemini-2.5-pro",
+            )
+            
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
             print(f"Activity Type: {activity_type}, Course Vertical: {course_vertical}")

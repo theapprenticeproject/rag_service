@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import frappe
 
@@ -12,6 +12,15 @@ from ..utils.submission_data import (
     TEXT_SUBMISSION_TYPES,
     format_submission_text_for_prompt,
 )
+
+EXPECTED_SUBMISSION_LABELS = {
+    "emoji": ["emoji"],
+    "word_text_voice": ["text", "audio"],
+    "image": ["image"],
+    "summary_text_voice": ["text", "audio"],
+    "photo_video_artefact": ["image", "video"],
+    "video": ["image", "video"],
+}
 
 
 class EvaluationGenerator:
@@ -251,6 +260,35 @@ class EvaluationGenerator:
                 rendered = rendered.replace(placeholder, str(value))
         return rendered
 
+    def _filter_submission_rules(
+        self,
+        assignment_context: Dict,
+        submission_data: Dict,
+    ) -> Dict[str, Any]:
+        submission_rules = assignment_context.get("assignment", {}).get("submission_rules", [])
+        if isinstance(submission_rules, str):
+            try:
+                submission_rules = json.loads(submission_rules)
+            except json.JSONDecodeError:
+                return {}
+
+        if not isinstance(submission_rules, list):
+            return {}
+
+        expected_submission_type = submission_data.get("expected_submission_type", "")
+        allowed_types = set(EXPECTED_SUBMISSION_LABELS.get(expected_submission_type, []))
+
+        for rule in submission_rules:
+            if allowed_types and not allowed_types.intersection(rule.get("allowed_submission_types") or []):
+                continue
+
+            return {
+                "valid_criteria": rule.get("valid_criteria"),
+                "invalid_criteria": rule.get("invalid_criteria"),
+            }
+
+        return {}
+
     def _build_prompt_vars(
         self,
         assignment_context: Dict,
@@ -287,15 +325,9 @@ class EvaluationGenerator:
             "Grade_Level": assignment_context.get("student", {}).get("grade", "1"),
             "submission_type": submission_data.get("submission_type", ""),
             "submission_text": submission_data.get("submission_text", "") or "",
-            "submission_text_context": format_submission_text_for_prompt(
-                submission_data
-            ),
-            "submission_rules": assignment_context.get("assignment", {}).get(
-                "submission_rules", []
-            ),
-            "expected_submission_type": submission_data.get(
-                "expected_submission_type", ""
-            ),
+            "submission_text_context": format_submission_text_for_prompt(submission_data),
+            "submission_rules": self._filter_submission_rules(assignment_context, submission_data),
+            "expected_submission_type": submission_data.get("expected_submission_type", ""),
             "archetype": submission_data.get("archetype"),
             "current_week": submission_data.get("current_week"),
             "escalation_step_at_submit": submission_data.get(
@@ -381,7 +413,7 @@ class EvaluationGenerator:
                 feedback, expected_format
             )
         except json.JSONDecodeError:
-            feedback = self.feedback_service.create_fallback_feedback(expected_format)
+            feedback = self.feedback_service.create_error_feedback(raw_text)
 
         return feedback
 
@@ -429,10 +461,14 @@ class EvaluationGenerator:
             update_modified=False,
         )
 
-    def _create_llm_provider(self, llm_provider_name: str = None) -> Tuple[Any, str]:
-        filters = {"is_active": 1}
-        if llm_provider_name:
-            filters["provider"] = llm_provider_name
+    def _create_llm_provider(
+        self,
+        llm_provider_name: str = "Gemini",
+        model_name: Optional[str] = None,
+    ) -> Tuple[Any, str]:
+        filters = {"is_active": 1, "provider": llm_provider_name}
+        if model_name:
+            filters["model_name"] = model_name
 
         llm_settings = frappe.get_list(
             "LLM Settings",
@@ -441,15 +477,8 @@ class EvaluationGenerator:
         )
 
         if not llm_settings:
-            # Fallback to any active setting if the specific one isn't found
-            llm_settings = frappe.get_list(
-                "LLM Settings",
-                filters={"is_active": 1},
-                limit=1,
-            )
-
-        if not llm_settings:
-            raise Exception("No active LLM configuration found")
+            model_msg = f" with model {model_name}" if model_name else ""
+            raise Exception(f"No active {llm_provider_name}{model_msg} configuration found")
 
         settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
         model_used = llm_settings[0].name
