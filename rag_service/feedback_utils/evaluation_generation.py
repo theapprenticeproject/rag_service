@@ -265,7 +265,9 @@ class EvaluationGenerator:
         assignment_context: Dict,
         submission_data: Dict,
     ) -> Dict[str, Any]:
-        submission_rules = assignment_context.get("assignment", {}).get("submission_rules", [])
+        submission_rules = assignment_context.get("assignment", {}).get(
+            "submission_rules", []
+        )
         if isinstance(submission_rules, str):
             try:
                 submission_rules = json.loads(submission_rules)
@@ -276,10 +278,14 @@ class EvaluationGenerator:
             return {}
 
         expected_submission_type = submission_data.get("expected_submission_type", "")
-        allowed_types = set(EXPECTED_SUBMISSION_LABELS.get(expected_submission_type, []))
+        allowed_types = set(
+            EXPECTED_SUBMISSION_LABELS.get(expected_submission_type, [])
+        )
 
         for rule in submission_rules:
-            if allowed_types and not allowed_types.intersection(rule.get("allowed_submission_types") or []):
+            if allowed_types and not allowed_types.intersection(
+                rule.get("allowed_submission_types") or []
+            ):
                 continue
 
             return {
@@ -325,9 +331,15 @@ class EvaluationGenerator:
             "Grade_Level": assignment_context.get("student", {}).get("grade", "1"),
             "submission_type": submission_data.get("submission_type", ""),
             "submission_text": submission_data.get("submission_text", "") or "",
-            "submission_text_context": format_submission_text_for_prompt(submission_data),
-            "submission_rules": self._filter_submission_rules(assignment_context, submission_data),
-            "expected_submission_type": submission_data.get("expected_submission_type", ""),
+            "submission_text_context": format_submission_text_for_prompt(
+                submission_data
+            ),
+            "submission_rules": self._filter_submission_rules(
+                assignment_context, submission_data
+            ),
+            "expected_submission_type": submission_data.get(
+                "expected_submission_type", ""
+            ),
             "archetype": submission_data.get("archetype"),
             "current_week": submission_data.get("current_week"),
             "escalation_step_at_submit": submission_data.get(
@@ -477,8 +489,26 @@ class EvaluationGenerator:
         )
 
         if not llm_settings:
+            # Fallback to the default active LLM provider if the specific one isn't found
+            llm_settings = frappe.get_list(
+                "LLM Settings",
+                filters={"is_active": 1, "is_default": 1},
+                limit=1,
+            )
+
+            if not llm_settings:
+                # Last resort: just get any active one
+                llm_settings = frappe.get_list(
+                    "LLM Settings",
+                    filters={"is_active": 1},
+                    limit=1,
+                )
+
+        if not llm_settings:
             model_msg = f" with model {model_name}" if model_name else ""
-            raise Exception(f"No active {llm_provider_name}{model_msg} configuration found")
+            raise Exception(
+                f"No active {llm_provider_name}{model_msg} configuration found and no default provider set."
+            )
 
         settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
         model_used = llm_settings[0].name
