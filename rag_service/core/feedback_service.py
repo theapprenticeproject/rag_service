@@ -8,7 +8,7 @@ from typing import Dict
 import frappe
 
 from ..feedback_utils.evaluation_generation import EvaluationGenerator
-from ..monitoring import _emit, record_llm_call
+from ..monitoring import emit, record_llm_call
 from ..utils.queue_manager import QueueManager
 
 
@@ -145,7 +145,7 @@ class FeedbackService:
             print("Payload sent to TAP LMS queue:")
             print(json.dumps(message, indent=2, ensure_ascii=False))
 
-            _emit(
+            emit(
                 severity="INFO",
                 message="rag_feedback_published",
                 submission_id=feedback_request.submission_id,

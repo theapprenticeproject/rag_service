@@ -29,7 +29,7 @@ def emit_structured_log(severity: str, message: str, **kwargs) -> None:
         pass
 
 
-def _emit(severity: str, message: str, **kwargs) -> None:
+def emit(severity: str, message: str, **kwargs) -> None:
     try:
         emit_structured_log(severity=severity, message=message, **kwargs)
     except Exception as e:
@@ -41,7 +41,7 @@ def _emit(severity: str, message: str, **kwargs) -> None:
 
 
 def record_request(path, method, status_code, duration_ms, user=None):
-    _emit(
+    emit(
         severity="INFO" if status_code < 400 else "ERROR",
         message="http_request",
         http_path=path,
@@ -53,7 +53,7 @@ def record_request(path, method, status_code, duration_ms, user=None):
 
 
 def record_job(job_name, status, duration_ms=None, error=None, **extra):
-    _emit(
+    emit(
         severity="INFO" if status in ("success", "skip") else "ERROR",
         message="background_job",
         job_name=job_name,
@@ -68,7 +68,7 @@ def record_job(job_name, status, duration_ms=None, error=None, **extra):
 
 
 def record_rag_submission_received(submission_id, student_id=None, assignment_id=None):
-    _emit(
+    emit(
         severity="INFO",
         message="rag_submission_received",
         submission_id=submission_id,
@@ -80,7 +80,7 @@ def record_rag_submission_received(submission_id, student_id=None, assignment_id
 def record_rag_feedback_complete(
     submission_id, model_used=None, template_used=None, duration_ms=None
 ):
-    _emit(
+    emit(
         severity="INFO",
         message="rag_feedback_complete",
         submission_id=submission_id,
@@ -91,7 +91,7 @@ def record_rag_feedback_complete(
 
 
 def record_rag_feedback_failed(submission_id, error, duration_ms=None):
-    _emit(
+    emit(
         severity="ERROR",
         message="rag_feedback_failed",
         submission_id=submission_id,
@@ -103,7 +103,7 @@ def record_rag_feedback_failed(submission_id, error, duration_ms=None):
 def record_llm_call(
     submission_id, provider, model, status, duration_ms=None, error=None
 ):
-    _emit(
+    emit(
         severity="INFO" if status == "success" else "ERROR",
         message="llm_call_complete" if status == "success" else "llm_call_failed",
         submission_id=submission_id,
@@ -117,7 +117,7 @@ def record_llm_call(
 def record_tap_lms_api_call(
     submission_id, endpoint, duration_ms, cache_hit=False, status_code=None
 ):
-    _emit(
+    emit(
         severity="INFO" if not status_code or status_code < 400 else "ERROR",
         message="tap_lms_api_call",
         submission_id=submission_id,

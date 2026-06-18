@@ -5,7 +5,7 @@ import traceback
 
 import frappe
 
-from .monitoring import _emit, record_request
+from .monitoring import emit, record_request
 
 
 def before_request():
@@ -36,7 +36,7 @@ def after_request():
 
 def on_exception():
     req = getattr(frappe.local, "request", None)
-    _emit(
+    emit(
         severity="ERROR",
         message="unhandled_exception",
         path=req.path if req else "unknown",
