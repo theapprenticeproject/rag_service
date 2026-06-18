@@ -2,8 +2,10 @@
 
 import time
 import traceback
+
 import frappe
-from .monitoring import record_request, emit_structured_log
+
+from .monitoring import _emit, record_request
 
 
 def before_request():
@@ -19,7 +21,9 @@ def after_request():
         duration_ms = (time.monotonic() - t0) * 1000 if t0 is not None else None
         req = getattr(frappe.local, "request", None)
         response = getattr(frappe.local, "response", None)
-        status_code = response.get("http_status_code", 200) if isinstance(response, dict) else 200
+        status_code = (
+            response.get("http_status_code", 200) if isinstance(response, dict) else 200
+        )
         record_request(
             path=req.path if req else "unknown",
             method=req.method if req else "unknown",
@@ -31,13 +35,10 @@ def after_request():
 
 
 def on_exception():
-    try:
-        req = getattr(frappe.local, "request", None)
-        emit_structured_log(
-            severity="ERROR",
-            message="unhandled_exception",
-            path=req.path if req else "unknown",
-            traceback=traceback.format_exc(),
-        )
-    except Exception:
-        pass
+    req = getattr(frappe.local, "request", None)
+    _emit(
+        severity="ERROR",
+        message="unhandled_exception",
+        path=req.path if req else "unknown",
+        traceback=traceback.format_exc(),
+    )
