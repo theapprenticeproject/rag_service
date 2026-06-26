@@ -518,7 +518,7 @@ class EvaluationGenerator:
             provider=provider_name,
             api_key="",
             model_name=settings.model_name,
-            temperature=settings.temperature or 0.1,
+            temperature=settings.temperature or 0,
             max_tokens=settings.max_tokens or 2000,
             settings=settings,
         )
