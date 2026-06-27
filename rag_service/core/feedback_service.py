@@ -291,7 +291,7 @@ class FeedbackService:
         """Ensure feedback has all required fields with correct types"""
         # Ensure all expected fields are present
         for field in expected_format:
-            if field not in feedback:
+            if field not in feedback or feedback[field] is None:
                 if isinstance(expected_format[field], list):
                     feedback[field] = ["No information provided"]
                 elif isinstance(expected_format[field], (int, float)):
