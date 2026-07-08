@@ -1,13 +1,16 @@
 # rag_service/rag_service/utils/rabbitmq_consumer.py
 
-import frappe
-import pika
-import json
 import asyncio
+import json
 from datetime import datetime
 from typing import Any, Dict, Optional
+
+import frappe
+import pika
+
 from ..core.feedback_handler import FeedbackHandler
 from .queue_manager import QueueManager
+
 
 class RabbitMQConsumer:
     def __init__(self, debug=True):
@@ -25,27 +28,28 @@ class RabbitMQConsumer:
         try:
             if self.debug:
                 print(f"\nConnecting to RabbitMQ at {self.settings.host}...")
-                
+
             credentials = pika.PlainCredentials(
-                self.settings.username,
-                self.settings.password
+                self.settings.username, self.settings.password
             )
-            
+
             parameters = pika.ConnectionParameters(
                 host=self.settings.host,
                 port=int(self.settings.port),
                 virtual_host=self.settings.virtual_host,
                 credentials=credentials,
-                heartbeat=600,
-                blocked_connection_timeout=300
+                heartbeat=60,  # send keep-alive heartbeat every minute
+                connection_attempts=3,  # Automatically retry connecting
+                retry_delay=5,  # Wait 5 seconds between retries
+                blocked_connection_timeout=300,
             )
-            
+
             self.connection = pika.BlockingConnection(parameters)
             self.channel = self.connection.channel()
-            
+
             if self.debug:
                 print("Connection established successfully!")
-                
+
         except Exception as e:
             error_msg = f"RabbitMQ Connection Error: {str(e)}"
             print(f"\nError: {error_msg}")
@@ -56,45 +60,37 @@ class RabbitMQConsumer:
         """Start consuming messages"""
         try:
             print("\n=== Starting RAG Service Consumer ===")
-            
+
             self.connect()
-            
+
             queue_name = self.settings.plagiarism_results_queue
             self.dead_letter_queue = f"{queue_name}.dead_letter"
-            
+
             # Declare queue to ensure it exists
-            self.channel.queue_declare(
-                queue=queue_name,
-                durable=True
-            )
-            self.channel.queue_declare(
-                queue=self.dead_letter_queue,
-                durable=True
-            )
+            self.channel.queue_declare(queue=queue_name, durable=True)
+            self.channel.queue_declare(queue=self.dead_letter_queue, durable=True)
             self.channel.confirm_delivery()
-            
+
             # Get queue information
             queue_info = self.channel.queue_declare(
-                queue=queue_name,
-                durable=True,
-                passive=True
+                queue=queue_name, durable=True, passive=True
             )
-            
+
             message_count = queue_info.method.message_count
             print(f"\nFound {message_count} messages in queue '{queue_name}'")
-            
+
             # Set up consumer
             self.channel.basic_qos(prefetch_count=1)
             self.channel.basic_consume(
                 queue=queue_name,
                 on_message_callback=self.process_message,
-                auto_ack=False
+                auto_ack=False,
             )
-            
+
             print("\nWaiting for messages. To exit press CTRL+C")
-            
+
             self.channel.start_consuming()
-            
+
         except Exception as e:
             error_msg = f"Consumer Error: {str(e)}"
             print(f"\nError: {error_msg}")
@@ -115,11 +111,11 @@ class RabbitMQConsumer:
 
         try:
             print(f"\n=== Processing Message {self.processed_count + 1} ===")
-            
+
             # Print raw message for debugging
             if self.debug:
                 print(f"Raw message: {body}")
-            
+
             # Parse message
             try:
                 message = json.loads(body)
@@ -142,18 +138,20 @@ class RabbitMQConsumer:
                     details=str(e),
                 )
                 return
-                
+
             # Validate required fields
             required_fields = [
-                'submission_id',
-                'student_id',
-                'assignment_id',
-                'submission_type',
-                'submission_url',
-                'submission_text',
+                "submission_id",
+                "student_id",
+                "assignment_id",
+                "submission_type",
+                "submission_url",
+                "submission_text",
             ]
-            missing_fields = [field for field in required_fields if field not in message]
-            
+            missing_fields = [
+                field for field in required_fields if field not in message
+            ]
+
             if missing_fields:
                 print(f"Missing required fields: {missing_fields}")
                 self._handle_failed_message(
@@ -166,7 +164,7 @@ class RabbitMQConsumer:
                     details=", ".join(missing_fields),
                 )
                 return
-                
+
             # Process message using feedback handler
             try:
                 # Create event loop for async operations
@@ -177,17 +175,17 @@ class RabbitMQConsumer:
                     loop.run_until_complete(
                         self.feedback_handler.handle_submission(message)
                     )
-                    
+
                     # Acknowledge message
                     ch.basic_ack(delivery_tag=method.delivery_tag)
-                    
+
                     # Update count
                     self.processed_count += 1
                     print(f"\nSuccessfully processed message {self.processed_count}")
-                    
+
                 finally:
                     loop.close()
-                    
+
             except Exception as e:
                 print(f"\n##########Error processing submission: {str(e)}")
                 # frappe.log_error(
@@ -203,16 +201,16 @@ class RabbitMQConsumer:
                     reason="Submission processing failed",
                     details=str(e),
                 )
-                
+
         except Exception as e:
             print(f"\nError processing message: {str(e)}")
             if self.debug:
                 print(f"Message body: {body}")
             frappe.log_error(
                 title="Message Processing Error",
-                message=f"Error processing message: {str(e)}\n\nRaw message: {body}"
+                message=f"Error processing message: {str(e)}\n\nRaw message: {body}",
             )
-            
+
             self._handle_failed_message(
                 ch=ch,
                 method=method,
@@ -232,7 +230,9 @@ class RabbitMQConsumer:
     ) -> Dict[str, Any]:
         """Build the fallback TAP LMS payload before risky processing starts."""
         error_text = details or reason
-        feedback = self.feedback_handler.feedback_service.create_error_feedback(error_text)
+        feedback = self.feedback_handler.feedback_service.create_error_feedback(
+            error_text
+        )
         source = message or {}
 
         return {
@@ -266,7 +266,9 @@ class RabbitMQConsumer:
             "status": "Failed",
             "failure_reason": reason,
             "failure_details": details,
-            "feedback": self.feedback_handler.feedback_service.create_error_feedback(details),
+            "feedback": self.feedback_handler.feedback_service.create_error_feedback(
+                details
+            ),
             "generated_at": datetime.now().isoformat(),
         }
 
@@ -280,7 +282,9 @@ class RabbitMQConsumer:
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                 print("Message requeued because failure response was not published")
             except Exception as nack_error:
-                print(f"Could not requeue message after publish failure: {str(nack_error)}")
+                print(
+                    f"Could not requeue message after publish failure: {str(nack_error)}"
+                )
             return
 
         try:
@@ -295,14 +299,20 @@ class RabbitMQConsumer:
             )
             print("Message moved to dead-letter queue")
         except Exception as dead_letter_error:
-            print(f"Could not move message to dead-letter queue: {str(dead_letter_error)}")
+            print(
+                f"Could not move message to dead-letter queue: {str(dead_letter_error)}"
+            )
 
         try:
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as ack_error:
-            print(f"Could not acknowledge message after failure handling: {str(ack_error)}")
+            print(
+                f"Could not acknowledge message after failure handling: {str(ack_error)}"
+            )
 
-    def _dead_letter_message(self, ch, method, properties, body, reason: str, details: str) -> None:
+    def _dead_letter_message(
+        self, ch, method, properties, body, reason: str, details: str
+    ) -> None:
         """Persist an unrecoverable message before removing it from the source queue."""
         queue_name = self.settings.plagiarism_results_queue
         dead_letter_queue = self.dead_letter_queue or f"{queue_name}.dead_letter"
@@ -313,7 +323,9 @@ class RabbitMQConsumer:
             "reason": reason,
             "details": details,
             "failed_at": datetime.now().isoformat(),
-            "body": body.decode("utf-8", errors="replace") if isinstance(body, bytes) else body,
+            "body": body.decode("utf-8", errors="replace")
+            if isinstance(body, bytes)
+            else body,
         }
 
         ch.basic_publish(
@@ -332,7 +344,6 @@ class RabbitMQConsumer:
             return body.decode("utf-8", errors="replace")
         return str(body)
 
-
     def test_connection(self) -> bool:
         """Test RabbitMQ connection"""
         try:
@@ -350,17 +361,17 @@ class RabbitMQConsumer:
         """Verify RabbitMQ queue settings"""
         try:
             queue_status = self.queue_manager.verify_queues()
-            
+
             print("\nQueue Status:")
             for queue, exists in queue_status.items():
                 status = "✓ Available" if exists else "✗ Not Found"
                 print(f"- {queue}: {status}")
-                
+
             if all(queue_status.values()):
                 print("\nAll queues verified successfully")
             else:
                 print("\nSome queues are missing or inaccessible")
-                
+
         except Exception as e:
             print(f"Queue verification failed: {str(e)}")
 
