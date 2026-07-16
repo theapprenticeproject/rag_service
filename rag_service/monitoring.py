@@ -187,6 +187,64 @@ def record_request(path, method, status_code, duration_ms, user=None):
     )
 
 
+# ── Unhandled exception tracing via Error Log ─────────────────────────────────
+
+
+def on_error_log_insert(doc, method) -> None:
+    """
+    Called by the doc_events hook whenever Frappe writes an Error Log record.
+    Covers unhandled exceptions in both web requests and RQ/scheduler workers.
+    """
+    try:
+        traceback_tail = (doc.error or "")[-2000:]
+        emit(
+            severity="ERROR",
+            message="unhandled_exception",
+            error_log=doc.name,
+            method=doc.method or "unknown",
+            traceback=traceback_tail,
+            reference_doctype=doc.reference_doctype or None,
+            reference_name=doc.reference_name or None,
+        )
+    except Exception:
+        pass
+
+
+# ── Background job hooks (v15) ────────────────────────────────────────────────
+
+import time as _time
+
+_job_start_times: dict = {}
+
+
+def before_job_hook(method: str = None, kwargs: dict = None, **_) -> None:
+    """
+    Called by Frappe v15 before_job hook for every background/scheduled job.
+    """
+    try:
+        _job_start_times[method or "unknown"] = _time.monotonic()
+    except Exception:
+        pass
+
+
+def after_job_hook(method: str = None, kwargs: dict = None, result=None, **_) -> None:
+    """
+    Called by Frappe v15 after_job hook for every background/scheduled job.
+    Emits a background_job log line with duration and outcome.
+
+    Failures also produce an unhandled_exception line via on_error_log_insert,
+    so errors get two log lines: one here (job boundary) and one with traceback.
+    """
+    try:
+        key = method or "unknown"
+        t0 = _job_start_times.pop(key, None)
+        duration_ms = (_time.monotonic() - t0) * 1000 if t0 is not None else None
+        status = "success" if result is not None else "error"
+        record_job(job_name=key, status=status, duration_ms=duration_ms)
+    except Exception:
+        pass
+
+
 def record_job(job_name, status, duration_ms=None, error=None, **extra):
     emit(
         severity="INFO" if status in ("success", "skip") else "ERROR",
