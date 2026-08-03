@@ -6,3 +6,4 @@ numpy
 opencv-python
 together
 google-cloud-aiplatform
+python-dotenv
