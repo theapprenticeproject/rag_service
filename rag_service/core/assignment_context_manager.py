@@ -6,6 +6,8 @@ import requests
 from datetime import datetime, timedelta
 from typing import Any, Dict
 from frappe.utils import now_datetime
+import time
+from ..monitoring import record_tap_lms_api_call
 
 class AssignmentContextManager:
     def __init__(self):
@@ -117,13 +119,34 @@ class AssignmentContextManager:
             payload = {
                 "assignment_id": assignment_id
             }
-            response = requests.post(
-                api_url,
-                headers=self.headers,
-                json=payload,
-                timeout=30
+            _api_t0 = time.monotonic()
+            _api_status = None
+            try:
+                response = requests.post(
+                    api_url,
+                    headers=self.headers,
+                    json=payload,
+                    timeout=30
+                )
+                _api_status = response.status_code
+            except Exception as _conn_err:
+                record_tap_lms_api_call(
+                    submission_id=None,
+                    endpoint="get_assignment_context",
+                    duration_ms=(time.monotonic() - _api_t0) * 1000,
+                    cache_hit=False,
+                    status_code=None,
+                )
+                raise
+
+            record_tap_lms_api_call(
+                submission_id=None,
+                endpoint="get_assignment_context",
+                duration_ms=(time.monotonic() - _api_t0) * 1000,
+                cache_hit=False,
+                status_code=_api_status,
             )
-            
+
             if response.status_code != 200:
                 error_msg = f"API request failed with status {response.status_code}: {response.text}"
                 print(f"Error: {error_msg}")
@@ -152,13 +175,34 @@ class AssignmentContextManager:
             payload = {
                 "student_id": student_id
             }
-            response = requests.post(
-                api_url,
-                headers=self.headers,
-                json=payload,
-                timeout=30
+            _api_t0 = time.monotonic()
+            _api_status = None
+            try:
+                response = requests.post(
+                    api_url,
+                    headers=self.headers,
+                    json=payload,
+                    timeout=30
+                )
+                _api_status = response.status_code
+            except Exception as _conn_err:
+                record_tap_lms_api_call(
+                    submission_id=None,
+                    endpoint="get_student_context",
+                    duration_ms=(time.monotonic() - _api_t0) * 1000,
+                    cache_hit=False,
+                    status_code=None,
+                )
+                raise
+
+            record_tap_lms_api_call(
+                submission_id=None,
+                endpoint="get_student_context",
+                duration_ms=(time.monotonic() - _api_t0) * 1000,
+                cache_hit=False,
+                status_code=_api_status,
             )
-            
+
             if response.status_code != 200:
                 error_msg = f"API request failed with status {response.status_code}: {response.text}"
                 print(f"Error: {error_msg}")

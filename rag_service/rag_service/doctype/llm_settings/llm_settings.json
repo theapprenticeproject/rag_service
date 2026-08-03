@@ -1,117 +1,123 @@
 {
- "actions": [],
- "allow_rename": 1,
- "creation": "2024-11-01 13:41:11.924246",
- "doctype": "DocType",
- "engine": "InnoDB",
- "field_order": [
-  "provider",
-  "model_name",
-  "temperature",
-  "max_tokens",
-  "api_key",
-  "api_secret",
-  "location",
-  "project_id",
-  "credentials_json",
-  "is_active",
-  "is_default",
-  "description"
- ],
- "fields": [
-  {
-   "fieldname": "provider",
-   "fieldtype": "Select",
-   "label": "LLM Provider",
-   "options": "OpenAI\nAnthropic\nTogether AI\nGemini\nCustom"
-  },
-  {
-   "fieldname": "model_name",
-   "fieldtype": "Data",
-   "label": "Model Name"
-  },
-  {
-   "fieldname": "api_key",
-   "fieldtype": "Data",
-   "label": "API Key",
-   "length": 200
-  },
-  {
-   "default": "0.7",
-   "fieldname": "temperature",
-   "fieldtype": "Float",
-   "label": "Temperature"
-  },
-  {
-   "default": "1500",
-   "fieldname": "max_tokens",
-   "fieldtype": "Int",
-   "label": "Max Tokens"
-  },
+  "actions": [],
+  "allow_rename": 1,
+  "creation": "2024-11-01 13:41:11.924246",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "provider",
+    "model_name",
+    "base_url",
+    "temperature",
+    "max_tokens",
+    "api_key",
+    "api_secret",
+    "location",
+    "project_id",
+    "credentials_json",
+    "is_active",
+    "is_default",
+    "description"
+  ],
+  "fields": [
     {
-   "default": "us-central1",
-   "fieldname": "location",
-   "fieldtype": "Data",
-   "label": "Location"
-  },
-  {
-   "fieldname": "project_id",
-   "fieldtype": "Data",
-   "label": "Project ID"
-  },
-  {
-   "fieldname": "credentials_json",
-   "fieldtype": "Code",
-   "in_list_view": 1,
-   "label": "Service Account Credentials (JSON)",
-   "options": "JSON"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_active",
-   "fieldtype": "Check",
-   "label": "Is Active"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_default",
-   "fieldtype": "Check",
-   "label": "Is Default"
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Small Text",
-   "label": "Description"
-  },
-  {
-   "fieldname": "api_secret",
-   "fieldtype": "Password",
-   "label": "API Secret",
-   "length": 250
-  }
- ],
- "index_web_pages_for_search": 1,
- "links": [],
- "modified": "2025-05-13 18:29:10.580186",
- "modified_by": "Administrator",
- "module": "Rag Service",
- "name": "LLM Settings",
- "owner": "Administrator",
- "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
-  }
- ],
- "sort_field": "modified",
- "sort_order": "DESC",
- "states": []
+      "fieldname": "provider",
+      "fieldtype": "Select",
+      "label": "LLM Provider",
+      "options": "OpenAI\nAnthropic\nTogether AI\nGemini\nStub\nCustom"
+    },
+    {
+      "fieldname": "model_name",
+      "fieldtype": "Data",
+      "label": "Model Name"
+    },
+    {
+      "fieldname": "base_url",
+      "fieldtype": "Data",
+      "label": "Base URL"
+    },
+    {
+      "fieldname": "api_key",
+      "fieldtype": "Data",
+      "label": "API Key",
+      "length": 200
+    },
+    {
+      "default": "0.7",
+      "fieldname": "temperature",
+      "fieldtype": "Float",
+      "label": "Temperature"
+    },
+    {
+      "default": "1500",
+      "fieldname": "max_tokens",
+      "fieldtype": "Int",
+      "label": "Max Tokens"
+    },
+    {
+      "default": "us-central1",
+      "fieldname": "location",
+      "fieldtype": "Data",
+      "label": "Location"
+    },
+    {
+      "fieldname": "project_id",
+      "fieldtype": "Data",
+      "label": "Project ID"
+    },
+    {
+      "fieldname": "credentials_json",
+      "fieldtype": "Code",
+      "in_list_view": 1,
+      "label": "Service Account Credentials (JSON)",
+      "options": "JSON"
+    },
+    {
+      "default": "0",
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "label": "Is Active"
+    },
+    {
+      "default": "0",
+      "fieldname": "is_default",
+      "fieldtype": "Check",
+      "label": "Is Default"
+    },
+    {
+      "fieldname": "description",
+      "fieldtype": "Small Text",
+      "label": "Description"
+    },
+    {
+      "fieldname": "api_secret",
+      "fieldtype": "Password",
+      "label": "API Secret",
+      "length": 250
+    }
+  ],
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2025-05-13 18:29:10.580186",
+  "modified_by": "Administrator",
+  "module": "Rag Service",
+  "name": "LLM Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
 }

@@ -1,11 +1,13 @@
 # rag_service/rag_service/utils/queue_manager.py
 
+import json
+import traceback
+from datetime import datetime
+from typing import Dict
+
 import frappe
 import pika
-import json
-from typing import Dict
-from datetime import datetime
-import traceback
+
 
 class QueueManager:
     def __init__(self):
@@ -20,28 +22,31 @@ class QueueManager:
                 return
 
             credentials = pika.PlainCredentials(
-                self.settings.username,
-                self.settings.password
+                self.settings.username, self.settings.password
             )
-            
+
             parameters = pika.ConnectionParameters(
                 host=self.settings.host,
                 port=int(self.settings.port),
                 virtual_host=self.settings.virtual_host,
                 credentials=credentials,
-                heartbeat=600,
-                blocked_connection_timeout=300
+                heartbeat=60,  # send keep-alive heartbeat every minute
+                connection_attempts=3,  # Automatically retry connecting
+                retry_delay=5,  # Wait 5 seconds between retries
+                blocked_connection_timeout=300,
             )
-            
+
             self.connection = pika.BlockingConnection(parameters)
             self.channel = self.connection.channel()
             self.channel.confirm_delivery()
-            
+
             # Queue exists and topology is managed by another service (LMS)
-            print(f"Connected to RabbitMQ. Will publish to queue: {self.settings.feedback_results_queue}")
-            
+            print(
+                f"Connected to RabbitMQ. Will publish to queue: {self.settings.feedback_results_queue}"
+            )
+
             print("\nConnected to RabbitMQ successfully")
-            
+
         except Exception as e:
             error_msg = f"RabbitMQ Connection Error for producer: {str(e)}\n{traceback.format_exc()}"
             print(f"\nError: {error_msg}")
@@ -62,32 +67,39 @@ class QueueManager:
         try:
             print("\n=== Sending Feedback to TAP LMS ===")
             print(f"Queue: {self.settings.feedback_results_queue}")
-            
+
             self.connect()
-            
+
+            # Declare the queue to ensure it exists (idempotent — safe to call even if already declared)
+            self.channel.queue_declare(
+                queue=self.settings.feedback_results_queue, durable=True
+            )
+
             # Add metadata to feedback
             message = {
                 **feedback_data,
                 "sent_at": datetime.now().isoformat(),
-                "service": "RAG"
+                "service": "RAG",
             }
-            
+
             # Send to queue
             confirmed = self.channel.basic_publish(
-                exchange='',
+                exchange="",
                 routing_key=self.settings.feedback_results_queue,
                 body=json.dumps(message, ensure_ascii=False),
                 properties=pika.BasicProperties(
                     delivery_mode=2,  # make message persistent
-                    content_type='application/json'
+                    content_type="application/json",
                 ),
-                mandatory=True
+                mandatory=True,
             )
             if confirmed is False:
                 raise RuntimeError("RabbitMQ did not confirm feedback publish")
-            
-            print(f"\nFeedback sent successfully for submission: {feedback_data.get('submission_id')}")
-            
+
+            print(
+                f"\nFeedback sent successfully for submission: {feedback_data.get('submission_id')}"
+            )
+
         except Exception as e:
             error_msg = f"Error sending feedback to TAP LMS: {str(e)}"
             print(f"\nError: {error_msg}")

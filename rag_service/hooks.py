@@ -5,6 +5,16 @@ app_description = "an advanced Retrieval-Augmented Generation (RAG) solution bui
 app_email = "mail@evalix.xyz"
 app_license = "mit"
 
+# ── SRE Monitoring ────────────────────────────────────────────────────────────
+before_request = ["rag_service.middleware.before_request"]
+after_request  = ["rag_service.middleware.after_request"]
+# on_exception does not exist in Frappe v14 or v15 — removed.
+# Unhandled exceptions are captured via the Error Log doc_events hook below.
+
+# v15 background job hooks — active because rag_service runs on Frappe v15.
+before_job = ["rag_service.monitoring.before_job_hook"]
+after_job  = ["rag_service.monitoring.after_job_hook"]
+
 
 commands = [
     "rag_service.rag_service.commands.consumer.commands"
@@ -140,15 +150,14 @@ commands = [
 
 # Document Events
 # ---------------
-# Hook on document methods and events
-
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+    # SRE: Frappe writes an Error Log record for every unhandled exception in
+    # both web requests and RQ/scheduler workers. Hooking after_insert here
+    # converts those writes into structured GCP log lines automatically.
+    "Error Log": {
+        "after_insert": "rag_service.monitoring.on_error_log_insert"
+    },
+}
 
 # Scheduled Tasks
 # ---------------
@@ -201,13 +210,11 @@ commands = [
 
 # Request Events
 # ----------------
-# before_request = ["rag_service.utils.before_request"]
-# after_request = ["rag_service.utils.after_request"]
+# before_request and after_request are registered above via SRE Monitoring block
 
 # Job Events
 # ----------
-# before_job = ["rag_service.utils.before_job"]
-# after_job = ["rag_service.utils.after_job"]
+# before_job and after_job are registered above in the SRE Monitoring block.
 
 # User Data Protection
 # --------------------
@@ -246,4 +253,3 @@ commands = [
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-

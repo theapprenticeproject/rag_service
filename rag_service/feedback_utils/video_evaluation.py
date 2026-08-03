@@ -1,11 +1,12 @@
 # rag_service/rag_service/feedback_utils/video_evaluation.py
 
+import os
 from typing import Dict, Tuple
 
 import frappe
 
-from .evaluation_generation import EvaluationGenerator
 from ..utils.gcp_service_client import GCPServiceClient
+from .evaluation_generation import EvaluationGenerator
 
 
 class VideoEvaluationGenerator(EvaluationGenerator):
@@ -17,7 +18,7 @@ class VideoEvaluationGenerator(EvaluationGenerator):
         media_service = None
         media_asset = None
         try:
-            print("\n=== Starting AI Feedback Generation (Image) ===")
+            print("\n=== Starting AI Feedback Generation (Video) ===")
 
             llm_provider, model_used = self._create_llm_provider(
                 "Gemini",
@@ -28,8 +29,9 @@ class VideoEvaluationGenerator(EvaluationGenerator):
             course_vertical = assignment_context["assignment"].get("course_vertical")
             print(f"Activity Type: {activity_type}, Course Vertical: {course_vertical}")
 
-
-            template = self.get_prompt_template("video", "both", activity_type, course_vertical)
+            template = self.get_prompt_template(
+                "video", "both", activity_type, course_vertical
+            )
             expected_format = self._get_expected_format(template)
 
             system_prompt, formatted_user_prompt = self._format_prompts(
@@ -41,23 +43,32 @@ class VideoEvaluationGenerator(EvaluationGenerator):
             combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
 
             media_service = GCPServiceClient()
-            media_asset = media_service.download_media(submission_data["submission_url"])
+            media_asset = media_service.download_media(
+                submission_data["submission_url"]
+            )
 
             response = await llm_provider.generate_with_video(
                 media_asset,
                 combined_prompt,
                 mime_type=media_asset["mime_type"],
             )
+
             raw_text = response.text
             self.cost = llm_provider.calculate_cost(response.to_dict())
 
-            self.log_prob_feedback = response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            self.log_prob_feedback = (
+                response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            )
 
             print(f"\nRaw LLM Output:\n{raw_text}")
             feedback = self._parse_feedback(raw_text, expected_format)
             feedback = self._attach_plagiarism_defaults(feedback)
             feedback = self._attach_default_fileds(feedback)
-            feedback['strengths'] = [f"cost:{self.cost}", f"Feedback_LP:{self.log_prob_feedback}", f"Eval_LP:{0.0}"]
+            feedback["strengths"] = [
+                f"cost:{self.cost}",
+                f"Feedback_LP:{self.log_prob_feedback}",
+                f"Eval_LP:{0.0}",
+            ]
 
             template_used = self._template_used_name(template)
 
@@ -72,7 +83,11 @@ class VideoEvaluationGenerator(EvaluationGenerator):
             template_used = "Built-in Universal Template for Error"
             error_feedback = self.feedback_service.create_error_feedback(str(e))
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
-            error_feedback['strengths'] = ["cost:1", f"Feedback_LP:0.89", f"Eval_LP:0.78"]
+            error_feedback["strengths"] = [
+                "cost:1",
+                f"Feedback_LP:0.89",
+                f"Eval_LP:0.78",
+            ]
             return error_feedback, "N/A", template_used
         finally:
             if media_service:

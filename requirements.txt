@@ -1,6 +1,9 @@
 pika
-langchain_openai
+langchain-openai
 aiohttp
 requests
 numpy
 opencv-python
+together
+google-cloud-aiplatform
+python-dotenv

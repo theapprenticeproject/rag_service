@@ -1,6 +1,12 @@
 # rag_service/rag_service/core/feedback_handler.py
 
+import time
 import frappe
+from ..monitoring import (
+    record_rag_submission_received,
+    record_rag_feedback_complete,
+    record_rag_feedback_failed,
+)
 import json
 from datetime import datetime
 from typing import Dict, Optional
@@ -18,6 +24,18 @@ class FeedbackHandler:
     async def handle_submission(self, message_data: Dict) -> None:
         """Handle a new submission from plagiarism queue"""
         request_id = None
+        _t0 = time.monotonic()
+        submission_id = message_data.get("submission_id")
+        student_id = message_data.get("student_id")
+        assignment_id = message_data.get("assignment_id")
+
+        # SRE: pipeline trace — step 1 in rag_service
+        record_rag_submission_received(
+            submission_id=submission_id,
+            student_id=student_id,
+            assignment_id=assignment_id,
+        )
+
         try:
             submission_data = normalize_submission_payload(message_data)
 
@@ -47,6 +65,15 @@ class FeedbackHandler:
             error_msg = f"Error handling submission: {str(e)}"
             print(f"\nError: {error_msg}")
             frappe.log_error(error_msg, "Submission Handler Error")
+            # SRE: pipeline trace — failure
+            try:
+                record_rag_feedback_failed(
+                    submission_id=submission_id,
+                    error=error_msg,
+                    duration_ms=(time.monotonic() - _t0) * 1000,
+                )
+            except Exception:
+                pass
             
             # Mark request as failed if it exists
             if request_id and frappe.db.exists("Feedback Request", request_id):
@@ -62,6 +89,16 @@ class FeedbackHandler:
             # Process and deliver feedback
             await self.feedback_service.process_feedback(request_id, feedback, model_used, template_used)
             print("\nFeedback processing completed")
+            # SRE: pipeline trace — complete (always emitted, success or error)
+            try:
+                record_rag_feedback_complete(
+                    submission_id=submission_id,
+                    model_used=model_used,
+                    template_used=template_used,
+                    duration_ms=(time.monotonic() - _t0) * 1000,
+                )
+            except Exception:
+                pass
 
     def _attach_plagiarism_defaults(self, feedback: Dict) -> Dict:
         feedback["plagiarism_output"] = {

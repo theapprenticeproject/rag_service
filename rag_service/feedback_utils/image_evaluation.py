@@ -1,36 +1,20 @@
 # rag_service/rag_service/feedback_utils/image_evaluation.py
 
 import json
+import os
 from typing import Any, Dict, Optional, Tuple
 
 import frappe
 
-from .evaluation_generation import EvaluationGenerator
 from ..core.llm_providers import create_llm_provider
+from .evaluation_generation import EvaluationGenerator
 
 
 class ImageEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for image submissions."""
 
-    def _create_llm_provider(self,llm_provider_name) -> Tuple[Any, str]:
-        llm_settings = frappe.get_list("LLM Settings", 
-                                       filters={"is_active": 1, "provider": llm_provider_name}, limit=1)
-        if not llm_settings:
-            raise Exception(f"No active {llm_provider_name} configuration found")
-
-        settings = frappe.get_doc("LLM Settings", llm_settings[0].name)
-        model_used = llm_settings[0].name
-
-        llm_provider = create_llm_provider(
-            provider=llm_provider_name,
-            api_key="",
-            model_name=settings.model_name,
-            temperature=settings.temperature or 0,
-            max_tokens=settings.max_tokens or 2000,
-            settings=settings,
-        )
-
-        return llm_provider, model_used
+    def _create_llm_provider(self) -> Tuple[Any, str]:
+        return super()._create_llm_provider()
 
     async def generate_feedback(
         self, assignment_context: Dict, submission_url: str, submission_id: str
@@ -45,12 +29,15 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
 
-            llm_provider_name = "Gemini"
-            llm_provider, model_used = self._create_llm_provider(llm_provider_name)
+            llm_provider, model_used = self._create_llm_provider()
 
-            evaluation_result = await self.generate_evaluation(llm_provider, submission_url, assignment_context)
+            evaluation_result = await self.generate_evaluation(
+                llm_provider, submission_url, assignment_context
+            )
 
-            template = self.get_prompt_template("image", "feedback", activity_type, course_vertical)
+            template = self.get_prompt_template(
+                "image", "feedback", activity_type, course_vertical
+            )
             expected_format = self._get_expected_format(template)
 
             system_prompt, formatted_user_prompt = self._format_prompts(
@@ -61,11 +48,16 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             )
             combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
 
-            response = await llm_provider.generate_with_vision(submission_url, combined_prompt)
+            response = await llm_provider.generate_with_vision(
+                submission_url, combined_prompt
+            )
+
             raw_text = response.text
             cost = llm_provider.calculate_cost(response.to_dict())
 
-            self.log_prob_feedback = response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            self.log_prob_feedback = (
+                response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            )
             self.cost = self.cost + cost
 
             print(f"\nRaw LLM Output:\n{raw_text}")
@@ -73,7 +65,11 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             feedback = self._attach_plagiarism_defaults(feedback)
             feedback = self._attach_evaluation_to_feedback(feedback, evaluation_result)
             feedback = self._attach_default_fileds(feedback)
-            feedback['strengths'] = [f"cost:{self.cost}", f"Feedback_LP:{self.log_prob_feedback}", f"Eval_LP:{self.log_prob_eval}"]
+            feedback["strengths"] = [
+                f"cost:{self.cost}",
+                f"Feedback_LP:{self.log_prob_feedback}",
+                f"Eval_LP:{self.log_prob_eval}",
+            ]
 
             template_used = self._template_used_name(template)
 
@@ -88,10 +84,16 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             template_used = "Built-in Universal Template for Error"
             error_feedback = self.feedback_service.create_error_feedback(str(e))
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
-            error_feedback['strengths'] = ["cost:1", f"Feedback_LP:0.89", f"Eval_LP:0.78"]
+            error_feedback["strengths"] = [
+                "cost:1",
+                f"Feedback_LP:0.89",
+                f"Eval_LP:0.78",
+            ]
             return error_feedback, "N/A", template_used
 
-    async def generate_evaluation(self, llm_provider: Any, submission_url: str, assignment_context: Dict) -> Dict:
+    async def generate_evaluation(
+        self, llm_provider: Any, submission_url: str, assignment_context: Dict
+    ) -> Dict:
         try:
             print("\n=== Starting Rubric Evaluation Generation (Image) ===")
             submission_data = {
@@ -102,7 +104,9 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
 
-            template = self.get_prompt_template("image", "evaluation", activity_type, course_vertical)
+            template = self.get_prompt_template(
+                "image", "evaluation", activity_type, course_vertical
+            )
             system_prompt, formatted_user_prompt = self._format_prompts(
                 template,
                 assignment_context,
@@ -111,10 +115,14 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             )
             combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
 
-            response = await llm_provider.generate_with_vision(submission_url, combined_prompt)
+            response = await llm_provider.generate_with_vision(
+                submission_url, combined_prompt
+            )
             raw_text = response.text
             cost = llm_provider.calculate_cost(response.to_dict())
-            self.log_prob_eval = response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            self.log_prob_eval = (
+                response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
+            )
             self.cost = cost
             evaluation_result = self._parse_rubric_evaluations(raw_text)
 
