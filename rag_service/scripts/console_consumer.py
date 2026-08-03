@@ -1,48 +1,56 @@
 #!/usr/bin/env python
-# ── STEP 1: INJECT RUNTIME PATHS BEFORE ANY OTHER CODES ──────────────────────
-import sys
-import os
+# RAG service queue consumer — bootstraps Frappe context then starts consuming
+# from the plagiarism_results RabbitMQ queue.
+#
+# Usage (from any directory):
+#   SITE_NAME=rag.dev python rag_service/scripts/console_consumer.py
+#
+# Or via module invocation (as used in entrypoint.sh):
+#   SITE_NAME=rag.dev python -c "import rag_service.scripts.console_consumer as cc; cc.run()"
+#
+# Or via supervisor (see docs/server_setup.md):
+#   environment=SITE_NAME="rag.dev"
+#   directory=/home/rag-dev/frappe-bench/sites
+#   command=.../env/bin/python .../rag_service/scripts/console_consumer.py
 
-py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
-
-isolated_paths = [
-    "/workspace/rag_service",
-    f"/home/frappe/rag_venv/lib/{py_ver}/site-packages"
-]
-
-for path in isolated_paths:
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-# ── STEP 2: STABLE STANDALONE FRAPPE BOOTSTRAP ──────────────────────────────
-import frappe
+# ── STEP 1: STABLE STANDALONE FRAPPE BOOTSTRAP ───────────────────────────────
 import importlib
+import os
+import sys
 
-# 1. Ensure global log folder is ready
-os.makedirs("/home/frappe/logs", exist_ok=True)
+import frappe
 
-# 2. Map system site configurations
-bench_sites_path = "/home/frappe/frappe-bench/sites"
-site_name = os.getenv("SITE_NAME", "tap_lms.localhost")
+# Bench sites path — explicit so the script works from any working directory,
+# not just when invoked from the sites/ folder.
+# In Docker the path is /home/frappe/frappe-bench/sites — set BENCH_SITES_PATH
+# to override. On the server, derived relative to this script's location.
+bench_sites_path = os.getenv(
+    "BENCH_SITES_PATH",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "sites"),
+)
+bench_sites_path = os.path.abspath(bench_sites_path)
 
+site_name = os.getenv("SITE_NAME", "rag.localhost")
+
+# 1. Init Frappe with explicit sites_path so it resolves site_config.json
+#    regardless of the current working directory.
 frappe.init(site=site_name, sites_path=bench_sites_path)
 
-# 3. Create the site-specific log folder if it doesn't exist
-try:
-    sitelog_dir = os.path.dirname(frappe.utils.logger.get_log_filename("database", site_name))
-    os.makedirs(sitelog_dir, exist_ok=True)
-except Exception:
-    os.makedirs(f"{bench_sites_path}/{site_name}/logs", exist_ok=True)
+# 2. Ensure log directories exist.
+os.makedirs(os.path.join(bench_sites_path, site_name, "logs"), exist_ok=True)
 
-# 4. Populate site context flags manually before connecting
+# 3. Populate site context flags manually before connecting — prevents silent
+#    failures in Frappe internals that read frappe.local.conf before a full
+#    request context is established.
 frappe.local.site = site_name
 frappe.local.conf = frappe.get_site_config(site_name)
 frappe.local.lang = "en"
 
-# 5. Connect to the underlying database pool
+# 4. Connect to the database pool.
 frappe.connect()
 
-# 6. FORCE-REGISTER APP MODULES (Fixes the RAG Settings Core Fallback Error)
+# 5. Force-register installed app modules so DocType lookups work correctly
+#    and custom app imports don't fail with ImportError.
 installed_apps = frappe.get_installed_apps()
 frappe.local.app_modules = {}
 for app in installed_apps:
@@ -51,15 +59,30 @@ for app in installed_apps:
     except ImportError:
         continue
 
-# ── STEP 3: RUN THE QUEUE LISTENER ──────────────────────────────────────────
+
+# ── STEP 2: RUN THE QUEUE LISTENER ───────────────────────────────────────────
 from rag_service.utils.rabbitmq_consumer import RabbitMQConsumer
 
+
 def run():
-    """Main worker entry point"""
+    """
+    Main entry point — can be called as a module or run directly as a script.
+
+    Entrypoint (module):  python -c "import rag_service.scripts.console_consumer as cc; cc.run()"
+    Entrypoint (script):  python rag_service/scripts/console_consumer.py
+    Supervisor:           command=.../env/bin/python .../rag_service/scripts/console_consumer.py
+    """
+    print("\n=== Starting RAG Service Consumer ===")
+    print(f"    site : {site_name}")
+    print(f"    sites: {bench_sites_path}\n")
+
     consumer = RabbitMQConsumer(debug=True)
     if consumer.test_connection():
-        print("Starting RabbitMQ consumer...")
         consumer.start_consuming()
+    else:
+        print("RabbitMQ connection test failed — consumer not started.")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     run()
