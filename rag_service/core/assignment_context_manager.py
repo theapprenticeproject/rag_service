@@ -164,7 +164,7 @@ class AssignmentContextManager:
                 print(f"Error: {error_msg}")
                 raise Exception(error_msg)
             
-            data = response.json()["message"]
+            data = response.json()
             # data = {'student_id': 'ST00000182', 'grade': '5', 'level': 'L1', 'language': 'Hindi'}
             
             print("Student API request successful")
