@@ -1,0 +1,24 @@
+[Unit]
+Description=RAG Service RabbitMQ Consumer for rag.evalix.xyz
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=frappe
+Group=frappe
+WorkingDirectory=/home/frappe/frappe-bench
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/home/frappe/frappe-bench/env/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/bench --site rag.evalix.xyz execute rag_service.scripts.console_consumer.start_consumer
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+KillSignal=SIGINT
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rag-service-consumer
+
+[Install]
+WantedBy=multi-user.target
