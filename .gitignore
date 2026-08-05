@@ -10,3 +10,5 @@ __pycache__
 */private/*
 *test_consumer_payload.py
 *.env
+*.bak
+env.*

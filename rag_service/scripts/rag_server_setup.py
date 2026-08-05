@@ -2,44 +2,62 @@
 # rag_service/scripts/server_setup.py
 #
 # One-time setup script for a fresh rag_service server installation.
-# Seeds all required DocType settings from environment variables.
+# Seeds all required DocType settings from a .env file.
 #
 # Usage:
-#   1. Copy rag.env.example to rag.env and fill in values
-#   2. Run from the bench sites directory:
-#
+#   1. Copy rag.env.example to ~/rag.env and fill in values
+#   2. Place service account JSON files on the server (paths go in .env file)
+#   3. Run:
 #      cd ~/frappe-bench/sites
-#      ../env/bin/python ../apps/rag_service/rag_service/scripts/server_setup.py
-#
-#   The script auto-loads ~/rag.env — override with ENV_FILE env var:
-#      ENV_FILE=/path/to/custom.env ../env/bin/python .../server_setup.py
+#      SITE_NAME=rag.dev ../env/bin/python ../apps/rag_service/rag_service/scripts/server_setup.py
 #
 # Safe to re-run — all steps are idempotent.
 
 import importlib
+import json
 import os
-import sys
 
 from dotenv import load_dotenv
+import frappe
+import frappe.utils.password as frappe_crypt
 
-# Load .env file — consistent with how tap_plg loads config
-env_file = os.getenv("ENV_FILE", os.path.expanduser("~/rag.env"))
+# ── Load .env ─────────────────────────────────────────────────────────────────
+env_file = os.getenv("ENV_FILE", os.path.expanduser("~/.env"))
 if os.path.exists(env_file):
     load_dotenv(env_file)
     print(f"Loaded env from: {env_file}")
 else:
-    print(f"Warning: env file not found at {env_file} — using shell environment only")
+    print(f"Warning: {env_file} not found — using shell environment only")
+
+
+def require(var):
+    val = os.getenv(var)
+    if not val:
+        print(f"ERROR: required variable {var!r} is not set in {env_file}")
+        raise SystemExit(1)
+    return val
+
+
+def optional(var, default=""):
+    return os.getenv(var, default)
+
+
+def read_json_file(var):
+    """Read a JSON file whose path is stored in the given env var."""
+    path = os.path.expanduser(require(var))
+    if not os.path.exists(path):
+        print(f"ERROR: file not found: {path!r} (from {var})")
+        raise SystemExit(1)
+    with open(path) as f:
+        return json.dumps(json.load(f))
+
 
 # ── Bootstrap Frappe ──────────────────────────────────────────────────────────
-import frappe
-import frappe.utils.password as frappe_crypt
-
-bench_sites_path = os.getenv(
-    "BENCH_SITES_PATH",
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "sites"),
+bench_sites_path = os.path.abspath(
+    os.getenv("BENCH_SITES_PATH",
+              os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "sites"))
 )
-bench_sites_path = os.path.abspath(bench_sites_path)
-site_name = os.getenv("SITE_NAME", "rag.dev")
+site_name = optional("SITE_NAME", "rag.dev")
 
 frappe.init(site=site_name, sites_path=bench_sites_path)
 frappe.local.site = site_name
@@ -48,35 +66,16 @@ frappe.local.lang = "en"
 frappe.connect()
 frappe.set_user("Administrator")
 
-# Force-register app modules
-installed_apps = frappe.get_installed_apps()
-frappe.local.app_modules = {}
-for app in installed_apps:
+for app in frappe.get_installed_apps():
     try:
+        frappe.local.app_modules = getattr(frappe.local, "app_modules", {})
         frappe.local.app_modules[app] = importlib.import_module(app)
     except ImportError:
         continue
 
-print(f"\n=== RAG Service Server Setup ===")
-print(f"    site : {site_name}")
-print(f"    sites: {bench_sites_path}\n")
-
-
-def require(var: str) -> str:
-    """Get env var or exit with a clear error."""
-    val = os.getenv(var)
-    if not val:
-        print(f"ERROR: required environment variable {var!r} is not set.")
-        sys.exit(1)
-    return val
-
-
-def optional(var: str, default: str = "") -> str:
-    return os.getenv(var, default)
-
+print(f"\n=== RAG Service Server Setup — {site_name} ===\n")
 
 # ── 1. RabbitMQ Settings ──────────────────────────────────────────────────────
-print("── 1. RabbitMQ Settings")
 frappe.db.set_value("RabbitMQ Settings", "RabbitMQ Settings", {
     "host":                     require("RABBITMQ_HOST"),
     "port":                     optional("RABBITMQ_PORT", "5672"),
@@ -87,74 +86,61 @@ frappe.db.set_value("RabbitMQ Settings", "RabbitMQ Settings", {
     "feedback_results_queue":   optional("RABBITMQ_FEEDBACK_RESULTS_QUEUE"),
 })
 frappe.db.commit()
-print("    ✓ RabbitMQ Settings saved")
+print("✓ RabbitMQ Settings saved")
 
 # ── 2. RAG Settings ───────────────────────────────────────────────────────────
-print("── 2. RAG Settings")
-tap_lms_base_url = require("TAP_LMS_BASE_URL")
-api_key = require("RAG_API_KEY")
-api_secret = require("RAG_API_SECRET")
-
-rag = frappe.get_doc("RAG Settings", "RAG Settings")
-rag.base_url = tap_lms_base_url
-rag.assignment_context_endpoint = optional(
+rag_doc = frappe.get_doc("RAG Settings", "RAG Settings")
+rag_doc.base_url = require("TAP_LMS_BASE_URL")
+rag_doc.assignment_context_endpoint = optional(
     "RAG_ASSIGNMENT_CONTEXT_ENDPOINT",
     "api/method/tap_lms.imgana.submission.get_assignment_context"
 )
-rag.student_context_endpoint = optional(
+rag_doc.student_context_endpoint = optional(
     "RAG_STUDENT_CONTEXT_ENDPOINT",
     "api/method/tap_lms.imgana.submission.get_student_details"
 )
-rag.enable_caching = optional("RAG_ENABLE_CACHING", "0")
-rag.api_key = api_key
-rag.save(ignore_permissions=True)
+rag_doc.enable_caching = optional("RAG_ENABLE_CACHING", "0")
+rag_doc.api_key = require("RAG_API_KEY")
+rag_doc.save(ignore_permissions=True)
 frappe.db.commit()
-print("    ✓ RAG Settings saved")
-
-# api_secret must be stored in Frappe's encrypted password vault
 frappe_crypt.set_encrypted_password(
-    "RAG Settings", "RAG Settings", api_secret, "api_secret"
+    "RAG Settings", "RAG Settings", require("RAG_API_SECRET"), "api_secret"
 )
 frappe.db.commit()
-print("    ✓ RAG Settings api_secret encrypted and stored in vault")
+print("✓ RAG Settings saved (api_secret encrypted)")
 
 # ── 3. GCS Settings ───────────────────────────────────────────────────────────
-print("── 3. GCS Settings")
 frappe.db.set_value("GCS Settings", "GCS Settings", {
     "project_id":       optional("GCS_PROJECT_ID"),
-    "credentials_json": optional("GCS_CREDENTIALS_JSON", "{}"),
+    "credentials_json": read_json_file("GCS_CREDENTIALS_JSON_FILE"),
 })
 frappe.db.commit()
-print("    ✓ GCS Settings saved")
+print("✓ GCS Settings saved")
 
 # ── 4. LLM Settings ───────────────────────────────────────────────────────────
-print("── 4. LLM Settings")
-llm_provider   = require("LLM_PROVIDER")
-llm_model_name = require("LLM_MODEL_NAME")
-llm_base_url   = require("LLM_BASE_URL")
-llm_api_key    = require("LLM_API_KEY")
+llm_provider = require("LLM_PROVIDER")
+llm_values = {
+    "provider":          llm_provider,
+    "model_name":        require("LLM_MODEL_NAME"),
+    "temperature":       float(optional("LLM_TEMPERATURE", "1")),
+    "max_tokens":        int(optional("LLM_MAX_TOKENS", "1500")),
+    "location":          optional("LLM_LOCATION"),
+    "project_id":        optional("LLM_PROJECT_ID"),
+    "credentials_json":  read_json_file("LLM_CREDENTIALS_JSON_FILE"),
+    "is_active":         1,
+}
 
-if not frappe.db.exists("LLM Settings", {"provider": llm_provider}):
-    doc = frappe.new_doc("LLM Settings")
-    doc.provider   = llm_provider
-    doc.model_name = llm_model_name
-    doc.base_url   = llm_base_url
-    doc.api_key    = llm_api_key
-    doc.is_active  = 1
-    doc.insert()
-    print(f"    ✓ LLM Settings created for provider: {llm_provider}")
+if frappe.db.exists("LLM Settings", {"provider": llm_provider}):
+    llm_doc = frappe.get_doc("LLM Settings", {"provider": llm_provider})
 else:
-    doc = frappe.get_doc("LLM Settings", {"provider": llm_provider})
-    doc.model_name = llm_model_name
-    doc.base_url   = llm_base_url
-    doc.api_key    = llm_api_key
-    doc.is_active  = 1
-    doc.save()
-    print(f"    ✓ LLM Settings updated for provider: {llm_provider}")
+    llm_doc = frappe.new_doc("LLM Settings")
+for k, v in llm_values.items():
+    setattr(llm_doc, k, v)
+llm_doc.save(ignore_permissions=True)
 frappe.db.commit()
+print(f"✓ LLM Settings saved (provider: {llm_provider})")
 
-# ── Done ──────────────────────────────────────────────────────────────────────
-print("\n=== Setup complete. Restart the consumer to apply settings: ===")
+print("\n=== Done. Restart consumer to apply: ===")
 print("    sudo supervisorctl restart frappe-bench-rag-consumer\n")
 
 frappe.destroy()
