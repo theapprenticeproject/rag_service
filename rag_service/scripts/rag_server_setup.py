@@ -43,13 +43,23 @@ def optional(var, default=""):
 
 
 def read_json_file(var):
-    """Read a JSON file whose path is stored in the given env var."""
+    """
+    Read a JSON file whose path is stored in the given env var.
+    Handles two formats:
+    - Raw GCP service account JSON (has 'type', 'client_email' at top level)
+    - Frappe doc export (has 'credentials_json' field containing the service account JSON)
+    """
     path = os.path.expanduser(require(var))
     if not os.path.exists(path):
         print(f"ERROR: file not found: {path!r} (from {var})")
         raise SystemExit(1)
     with open(path) as f:
-        return json.dumps(json.load(f))
+        data = json.load(f)
+    # if it's a Frappe doc export, extract the nested credentials_json
+    if "credentials_json" in data and "type" not in data:
+        inner = data["credentials_json"]
+        data = json.loads(inner) if isinstance(inner, str) else inner
+    return json.dumps(data)
 
 
 # ── Bootstrap Frappe ──────────────────────────────────────────────────────────
