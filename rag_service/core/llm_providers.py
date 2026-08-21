@@ -1,8 +1,15 @@
 # rag_service/rag_service/core/llm_providers.py
 
-from together import Together
+import base64
 import json
+import mimetypes
+import os
+import tempfile
 from typing import Any, List, Dict, Optional
+from urllib.parse import urlparse
+
+import requests
+from together import Together
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 from .llm_interface import BaseLLMInterface
@@ -135,6 +142,435 @@ class TogetherAIProvider(BaseLLMInterface):
         total_output_cost = (completion_tokens / 1_000_000) * output_cost
 
         return total_input_cost + total_output_cost
+
+
+class AnthropicResponse:
+    """Small adapter matching the response surface used by Gemini call sites."""
+
+    def __init__(self, data: Dict):
+        self.data = data
+        self.content = data.get("content", [])
+        self.text = self._extract_text()
+
+    def _extract_text(self) -> str:
+        text_blocks = []
+        for block in self.content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text_blocks.append(block.get("text", ""))
+        return "\n".join([text for text in text_blocks if text])
+
+    def to_dict(self) -> Dict:
+        return self.data
+
+
+class AnthropicProvider(BaseLLMInterface):
+    """Anthropic provider using the Claude Messages API."""
+
+    API_URL = "https://api.anthropic.com/v1/messages"
+    ANTHROPIC_VERSION = "2023-06-01"
+    SUPPORTED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    DEFAULT_VIDEO_FRAME_COUNT = 6
+
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str,
+        temperature: float = 0.7,
+        max_tokens: int = 2000,
+        settings: Any = None,
+    ):
+        super().__init__(api_key, model_name or "claude-sonnet-5", temperature, max_tokens)
+        self.settings = settings
+        self.api_key = self._resolve_api_key(api_key, settings)
+        if not self.api_key:
+            raise ValueError("Anthropic API key is required")
+
+    def _resolve_api_key(self, api_key: str, settings: Any) -> str:
+        if api_key and api_key.strip():
+            return api_key.strip()
+
+        if settings:
+            password_getter = getattr(settings, "get_password", None)
+            if callable(password_getter):
+                for fieldname in ("api_secret", "api_key"):
+                    try:
+                        value = password_getter(fieldname)
+                    except Exception:
+                        value = None
+                    if value:
+                        return str(value).strip()
+
+            for fieldname in ("api_secret", "api_key"):
+                value = self._settings_value(settings, fieldname)
+                if value:
+                    return str(value).strip()
+
+        return ""
+
+    def _settings_value(self, settings: Any, fieldname: str) -> Any:
+        getter = getattr(settings, "get", None)
+        if callable(getter):
+            value = getter(fieldname)
+            if value:
+                return value
+        return getattr(settings, fieldname, None)
+
+    async def generate(self, messages: List[Dict]) -> str:
+        system_prompt, normalized_messages = self._normalize_messages(messages)
+        payload = {
+            "model": self.model_name,
+            "max_tokens": self.max_tokens,
+            "messages": normalized_messages,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        response = self._post_message(payload)
+        cost = self.calculate_cost(response.to_dict())
+        return response.text, cost or "", 0.0
+
+    async def generate_with_vision(self, image_source, prompt: str, mime_type: Optional[str] = None) -> str:
+        try:
+            response = self._create_user_message(
+                [
+                    self._build_image_block(image_source, mime_type=mime_type),
+                    {"type": "text", "text": prompt},
+                ]
+            )
+            return response
+        except Exception as e:
+            raise Exception(f"Error during Anthropic vision generation: {e}")
+
+    async def generate_with_video(self, video_source, prompt: str, mime_type: Optional[str] = None) -> str:
+        try:
+            frame_blocks = self._build_video_frame_blocks(video_source, mime_type=mime_type)
+            response = self._create_user_message(
+                frame_blocks
+                + [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Assess the video from these sampled frames. "
+                            "Audio is not included in this Anthropic request.\n\n"
+                            f"{prompt}"
+                        ),
+                    }
+                ]
+            )
+            return response
+        except Exception as e:
+            raise Exception(f"Error during Anthropic video generation: {e}")
+
+    async def generate_with_audio(self, audio_source, prompt: str, mime_type: Optional[str] = None) -> str:
+        transcript = None
+        if isinstance(audio_source, dict):
+            transcript = audio_source.get("transcript") or audio_source.get("text")
+
+        if transcript:
+            return self._create_user_message(
+                [
+                    {
+                        "type": "text",
+                        "text": f"{prompt}\n\nAudio transcript:\n{transcript}",
+                    }
+                ]
+            )
+
+        raise NotImplementedError(
+            "Anthropic Messages API does not support raw audio input. "
+            "Pass a transcript or use Gemini for native audio evaluation."
+        )
+
+    def _post_message(self, payload: Dict) -> AnthropicResponse:
+        response = requests.post(
+            self.API_URL,
+            headers={
+                "x-api-key": self.api_key,
+                "anthropic-version": self.ANTHROPIC_VERSION,
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=120,
+        )
+        if not response.ok:
+            raise Exception(f"Anthropic API error {response.status_code}: {response.text}")
+        return AnthropicResponse(response.json())
+
+    def _create_user_message(self, content: List[Dict]) -> AnthropicResponse:
+        return self._post_message(
+            {
+                "model": self.model_name,
+                "max_tokens": self.max_tokens,
+                "messages": [{"role": "user", "content": content}],
+            }
+        )
+
+    def _normalize_messages(self, messages: List[Dict]) -> tuple[str, List[Dict]]:
+        system_parts = []
+        normalized_messages = []
+
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+
+            if role == "system":
+                system_parts.append(self._content_to_text(content))
+                continue
+
+            if role not in {"user", "assistant"}:
+                role = "user"
+
+            normalized_messages.append(
+                {
+                    "role": role,
+                    "content": self._normalize_content(content),
+                }
+            )
+
+        if not normalized_messages:
+            normalized_messages.append({"role": "user", "content": ""})
+
+        return "\n\n".join([part for part in system_parts if part]), normalized_messages
+
+    def _normalize_content(self, content):
+        if not isinstance(content, list):
+            return str(content)
+
+        normalized = []
+        for item in content:
+            if not isinstance(item, dict):
+                normalized.append({"type": "text", "text": str(item)})
+                continue
+
+            item_type = item.get("type")
+            if item_type == "text":
+                normalized.append({"type": "text", "text": item.get("text", "")})
+            elif item_type == "image" and item.get("source"):
+                normalized.append(item)
+            elif item_type == "image_url":
+                image_url = item.get("image_url", {}).get("url")
+                normalized.append(self._build_image_block(image_url))
+            else:
+                normalized.append(item)
+
+        return normalized
+
+    def _content_to_text(self, content) -> str:
+        if not isinstance(content, list):
+            return str(content)
+
+        text_parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                text_parts.append(item.get("text", ""))
+            else:
+                text_parts.append(str(item))
+        return "\n".join([part for part in text_parts if part])
+
+    def _build_image_block(self, image_source, mime_type: Optional[str] = None) -> Dict:
+        if isinstance(image_source, dict):
+            media_bytes = image_source.get("content")
+            resolved_mime_type = mime_type or image_source.get("mime_type")
+            if media_bytes is not None:
+                return self._image_block_from_bytes(media_bytes, resolved_mime_type)
+
+            local_path = image_source.get("local_path")
+            if local_path and os.path.isfile(local_path):
+                return self._image_block_from_file(local_path, resolved_mime_type)
+
+            media_url = image_source.get("submission_url") or image_source.get("url")
+            if media_url:
+                return self._image_block_from_url(media_url)
+
+            raise ValueError("Image source must contain content, local_path, submission_url, or url")
+
+        if isinstance(image_source, (bytes, bytearray)):
+            return self._image_block_from_bytes(image_source, mime_type)
+
+        image_value = str(image_source)
+        if os.path.isfile(image_value):
+            return self._image_block_from_file(image_value, mime_type)
+        return self._image_block_from_url(image_value)
+
+    def _image_block_from_file(self, image_path: str, mime_type: Optional[str] = None) -> Dict:
+        resolved_mime_type = mime_type or self._infer_mime_type(image_path)
+        with open(image_path, "rb") as image_file:
+            return self._image_block_from_bytes(image_file.read(), resolved_mime_type)
+
+    def _image_block_from_bytes(self, image_bytes, mime_type: Optional[str]) -> Dict:
+        resolved_mime_type = self._normalize_mime_type(mime_type)
+        if resolved_mime_type not in self.SUPPORTED_IMAGE_MIME_TYPES:
+            supported = ", ".join(sorted(self.SUPPORTED_IMAGE_MIME_TYPES))
+            raise ValueError(f"Unsupported Anthropic image type '{resolved_mime_type}'. Use one of: {supported}")
+
+        return {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": resolved_mime_type,
+                "data": base64.standard_b64encode(bytes(image_bytes)).decode("utf-8"),
+            },
+        }
+
+    def _image_block_from_url(self, image_url: str) -> Dict:
+        normalized_url = self._normalize_media_url(image_url)
+        parsed = urlparse(normalized_url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("Anthropic image URL sources must be HTTP(S) URLs")
+
+        return {
+            "type": "image",
+            "source": {
+                "type": "url",
+                "url": normalized_url,
+            },
+        }
+
+    def _build_video_frame_blocks(self, video_source, mime_type: Optional[str] = None) -> List[Dict]:
+        import cv2
+
+        video_path, cleanup_path = self._media_path_from_source(video_source, mime_type, ".mp4")
+        cap = None
+        try:
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                raise ValueError("Could not open video source")
+
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            indexes = self._sample_frame_indexes(frame_count, self.DEFAULT_VIDEO_FRAME_COUNT)
+            frame_blocks = []
+
+            for frame_number, frame_index in enumerate(indexes, start=1):
+                if frame_count > 0:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+                ok, frame = cap.read()
+                if not ok:
+                    continue
+
+                encoded_ok, buffer = cv2.imencode(".jpg", frame)
+                if not encoded_ok:
+                    continue
+
+                frame_blocks.append(
+                    {
+                        "type": "text",
+                        "text": f"Video frame {frame_number} of {len(indexes)}:",
+                    }
+                )
+                frame_blocks.append(self._image_block_from_bytes(buffer.tobytes(), "image/jpeg"))
+
+            if not frame_blocks:
+                raise ValueError("Could not extract usable frames from video")
+
+            return frame_blocks
+        finally:
+            if cap:
+                cap.release()
+            if cleanup_path and os.path.exists(cleanup_path):
+                os.remove(cleanup_path)
+
+    def _sample_frame_indexes(self, frame_count: int, max_frames: int) -> List[int]:
+        if frame_count <= 0:
+            return list(range(max_frames))
+
+        count = min(max_frames, frame_count)
+        if count == 1:
+            return [0]
+
+        return [round(index * (frame_count - 1) / (count - 1)) for index in range(count)]
+
+    def _media_path_from_source(self, media_source, mime_type: Optional[str], default_suffix: str) -> tuple[str, Optional[str]]:
+        if isinstance(media_source, dict):
+            local_path = media_source.get("local_path")
+            if local_path and os.path.isfile(local_path):
+                return local_path, None
+
+            media_bytes = media_source.get("content")
+            if media_bytes is not None:
+                resolved_mime_type = mime_type or media_source.get("mime_type")
+                return self._write_temp_media(media_bytes, resolved_mime_type, default_suffix)
+
+            media_url = media_source.get("submission_url") or media_source.get("url")
+            if media_url:
+                return self._download_media_to_temp(media_url, mime_type, default_suffix)
+
+            raise ValueError("Media source must contain content, local_path, submission_url, or url")
+
+        if isinstance(media_source, (bytes, bytearray)):
+            return self._write_temp_media(media_source, mime_type, default_suffix)
+
+        media_value = str(media_source)
+        if os.path.isfile(media_value):
+            return media_value, None
+        return self._download_media_to_temp(media_value, mime_type, default_suffix)
+
+    def _write_temp_media(self, media_bytes, mime_type: Optional[str], default_suffix: str) -> tuple[str, str]:
+        suffix = self._suffix_for_mime_type(mime_type, default_suffix)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(bytes(media_bytes))
+            return temp_file.name, temp_file.name
+
+    def _download_media_to_temp(self, media_url: str, mime_type: Optional[str], default_suffix: str) -> tuple[str, str]:
+        normalized_url = self._normalize_media_url(media_url)
+        parsed = urlparse(normalized_url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError("Anthropic provider can only download HTTP(S) media URLs")
+
+        response = requests.get(normalized_url, timeout=120)
+        if not response.ok:
+            raise Exception(f"Failed to download media {response.status_code}: {response.text}")
+
+        resolved_mime_type = mime_type or response.headers.get("content-type", "").split(";")[0] or self._infer_mime_type(normalized_url)
+        return self._write_temp_media(response.content, resolved_mime_type, default_suffix)
+
+    def _suffix_for_mime_type(self, mime_type: Optional[str], default_suffix: str) -> str:
+        if not mime_type:
+            return default_suffix
+        return mimetypes.guess_extension(mime_type) or default_suffix
+
+    def _infer_mime_type(self, source: str) -> str:
+        parsed = urlparse(str(source))
+        path = parsed.path or str(source)
+        return self._normalize_mime_type(mimetypes.guess_type(path)[0]) or "application/octet-stream"
+
+    def _normalize_mime_type(self, mime_type: Optional[str]) -> Optional[str]:
+        if not mime_type:
+            return None
+        if mime_type == "image/jpg":
+            return "image/jpeg"
+        return mime_type
+
+    def _normalize_media_url(self, media_url: str) -> str:
+        media_url = str(media_url)
+        if media_url.startswith("gs://"):
+            return media_url.replace("gs://", "https://storage.googleapis.com/", 1)
+        return media_url
+
+    def calculate_cost(self, response):
+        usage = response.get("usage") or {}
+        model = (response.get("model") or self.model_name or "").lower()
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        input_rate, output_rate = self._pricing_for_model(model)
+        cost = (input_tokens * (input_rate / 1_000_000)) + (output_tokens * (output_rate / 1_000_000))
+        return round(cost, 6)
+
+    def _pricing_for_model(self, model: str) -> tuple[float, float]:
+        if "fable" in model or "mythos" in model:
+            return 10.00, 50.00
+        if "opus-5" in model or "opus-4-8" in model or "opus-4.8" in model or "opus-4-7" in model or "opus-4.7" in model:
+            return 5.00, 25.00
+        if "sonnet-5" in model:
+            return 2.00, 10.00
+        if "haiku-4-5" in model or "haiku-4.5" in model:
+            return 1.00, 5.00
+        if "haiku-3-5" in model or "haiku-3.5" in model:
+            return 0.80, 4.00
+        if "opus" in model:
+            return 5.00, 25.00
+        if "sonnet" in model:
+            return 3.00, 15.00
+        return 3.00, 15.00
 
 
 class GeminiProvider(BaseLLMInterface):
@@ -377,6 +813,7 @@ def create_llm_provider(
     
     providers = {
         "OpenAI": OpenAIProvider,
+        "Anthropic": AnthropicProvider,
         "Together AI": TogetherAIProvider,
         "Gemini": GeminiProvider,
     }

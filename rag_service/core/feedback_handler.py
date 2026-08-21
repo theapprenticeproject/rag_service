@@ -27,8 +27,14 @@ class FeedbackHandler:
             
             # Get assignment context
             assignment_context = await self.assignment_context_manager.get_assignment_context(
-                message_data["assignment_id"], message_data["student_id"]
+                message_data["assignment_id"]
             )
+            assignment_context["student"] = {
+                            "student_id":message_data["student_id"],    
+                            "grade":message_data["grade"],
+                            "level":message_data["level"],
+                            "language": message_data["language"]
+                        }
             
             if not assignment_context:
                 raise ValueError(f"Could not get context for assignment: {message_data['assignment_id']}")

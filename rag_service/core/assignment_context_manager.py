@@ -87,17 +87,17 @@ class AssignmentContextManager:
                     print("Rubrics not found in assignment context.")
                     raise Exception("Rubrics missing in assignment context")
         
-            if student_id is None:
-                raise Exception("Student ID is required to fetch student context")
+            # if student_id is None:
+            #     raise Exception("Student ID is required to fetch student context")
             
-            student_details = await self._fetch_student_from_api(student_id)
-            # student_details = {
-            #                 "student_id":"ST0001",    
-            #                 "grade":"6",
-            #                 "level":"2",
-            #                 "language": "Hindi"
-            #             }
-            context["student"] = {**student_details}
+            # student_details = await self._fetch_student_from_api(student_id)
+            # # student_details = {
+            # #                 "student_id":"ST0001",    
+            # #                 "grade":"6",
+            # #                 "level":"2",
+            # #                 "language": "Hindi"
+            # #             }
+            # context["student"] = {**student_details}
 
             # print("Assignment context",context)
             return context
@@ -143,37 +143,37 @@ class AssignmentContextManager:
             print(f"\nError: {error_msg}")
             raise Exception(error_msg)
 
-    async def _fetch_student_from_api(self, student_id: str) -> Dict:
-        """Fetch student details from TAP LMS API"""
-        try:
-            # Construct API URL properly
-            api_url = f"{self.settings.base_url.rstrip('/')}/{self.settings.student_context_endpoint.lstrip('/')}"
+    # async def _fetch_student_from_api(self, student_id: str) -> Dict:
+    #     """Fetch student details from TAP LMS API"""
+    #     try:
+    #         # Construct API URL properly
+    #         api_url = f"{self.settings.base_url.rstrip('/')}/{self.settings.student_context_endpoint.lstrip('/')}"
             
-            payload = {
-                "student_id": student_id
-            }
-            response = requests.post(
-                api_url,
-                headers=self.headers,
-                json=payload,
-                timeout=30
-            )
+    #         payload = {
+    #             "student_id": student_id
+    #         }
+    #         response = requests.post(
+    #             api_url,
+    #             headers=self.headers,
+    #             json=payload,
+    #             timeout=30
+    #         )
             
-            if response.status_code != 200:
-                error_msg = f"API request failed with status {response.status_code}: {response.text}"
-                print(f"Error: {error_msg}")
-                raise Exception(error_msg)
+    #         if response.status_code != 200:
+    #             error_msg = f"API request failed with status {response.status_code}: {response.text}"
+    #             print(f"Error: {error_msg}")
+    #             raise Exception(error_msg)
             
-            data = response.json()
-            # data = {'student_id': 'ST00000182', 'grade': '5', 'level': 'L1', 'language': 'Hindi'}
+    #         data = response.json()
+    #         # data = {'student_id': 'ST00000182', 'grade': '5', 'level': 'L1', 'language': 'Hindi'}
             
-            print("Student API request successful")
-            return data
+    #         print("Student API request successful")
+    #         return data
             
-        except requests.RequestException as e:
-            error_msg = f"API request failed: {str(e)}"
-            print(f"\nError: {error_msg}")
-            raise Exception(error_msg)
+    #     except requests.RequestException as e:
+    #         error_msg = f"API request failed: {str(e)}"
+    #         print(f"\nError: {error_msg}")
+    #         raise Exception(error_msg)
 
     async def _save_to_cache(self, assignment_id: str, context: Dict) -> None:
         """Save assignment context to cache"""

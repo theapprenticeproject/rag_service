@@ -45,7 +45,7 @@ class ImageEvaluationGenerator(EvaluationGenerator):
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
 
-            llm_provider_name = "Gemini"
+            llm_provider_name = "Anthropic"
             llm_provider, model_used = self._create_llm_provider(llm_provider_name)
 
             evaluation_result = await self.generate_evaluation(llm_provider, submission_url, assignment_context)

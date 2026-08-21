@@ -147,46 +147,6 @@ class EvaluationGenerator:
 
         return prompt
 
-    # def get_default_response_format(self) -> Dict:
-    #     """Get default response format."""
-    #     return {
-    #         "rubric_evaluations": [
-    #             {
-    #                 "skill": "Skill Name",
-    #                 "grade_value": 2,
-    #                 "observation": "specific evidence from submission",
-    #             },
-    #             {
-    #                 "skill": "Skill Name",
-    #                 "grade_value": 2,
-    #                 "observation": "specific evidence from submission",
-    #             },
-    #         ],
-    #         "strengths": ["Strength 1", "Strength 2", "Strength 3"],
-    #         "areas_for_improvement": ["Area 1", "Area 2"],
-    #         "encouragement": "Encouraging message for the student",
-    #         "overall_feedback": "Overall assessment of the submission",
-    #         "overall_feedback_translated": "Translation of overall_feedback.",
-    #         "learning_objectives_feedback": ["Feedback on objective 1"],
-    #         "final_grade": 75,
-    #     }
-
-    # def get_default_evaluation_response_format(self) -> Dict:
-    #     """Get default response format for rubric-only evaluation."""
-    #     return {
-    #         "rubric_evaluations": [
-    #             {
-    #                 "skill": "Skill Name",
-    #                 "grade_value": 2,
-    #                 "observation": "specific evidence from submission",
-    #             },
-    #             {
-    #                 "skill": "Skill Name",
-    #                 "grade_value": 2,
-    #                 "observation": "specific evidence from submission",
-    #             },
-    #         ]
-    #     }
 
     def get_prompt_template(self, media_type: str, prompt_type: str, activity_type: str, course_vertical: str):
         """Get active template for the given media type."""
