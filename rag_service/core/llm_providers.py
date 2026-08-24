@@ -13,6 +13,7 @@ from together import Together
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from .llm_interface import BaseLLMInterface
+from ..utils.media_types import detect_image_mime_type
 import vertexai
 from google.oauth2 import service_account
 from vertexai.generative_models import GenerativeModel, Part
@@ -398,7 +399,8 @@ class AnthropicProvider(BaseLLMInterface):
             return self._image_block_from_bytes(image_file.read(), resolved_mime_type)
 
     def _image_block_from_bytes(self, image_bytes, mime_type: Optional[str]) -> Dict:
-        resolved_mime_type = self._normalize_mime_type(mime_type)
+        image_bytes = bytes(image_bytes)
+        resolved_mime_type = self._resolve_image_mime_type(image_bytes, mime_type)
         if resolved_mime_type not in self.SUPPORTED_IMAGE_MIME_TYPES:
             supported = ", ".join(sorted(self.SUPPORTED_IMAGE_MIME_TYPES))
             raise ValueError(f"Unsupported Anthropic image type '{resolved_mime_type}'. Use one of: {supported}")
@@ -408,9 +410,15 @@ class AnthropicProvider(BaseLLMInterface):
             "source": {
                 "type": "base64",
                 "media_type": resolved_mime_type,
-                "data": base64.standard_b64encode(bytes(image_bytes)).decode("utf-8"),
+                "data": base64.standard_b64encode(image_bytes).decode("utf-8"),
             },
         }
+
+    def _resolve_image_mime_type(self, image_bytes: bytes, mime_type: Optional[str]) -> Optional[str]:
+        detected_mime_type = detect_image_mime_type(image_bytes)
+        if detected_mime_type:
+            return detected_mime_type
+        return self._normalize_mime_type(mime_type)
 
     def _image_block_from_url(self, image_url: str) -> Dict:
         normalized_url = self._normalize_media_url(image_url)

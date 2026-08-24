@@ -10,6 +10,8 @@ import frappe
 from google.cloud import storage
 from google.oauth2 import service_account
 
+from .media_types import detect_image_mime_type
+
 
 class GCPServiceClient:
     """Shared GCP client factory/helpers using credentials stored in Frappe."""
@@ -38,9 +40,14 @@ class GCPServiceClient:
             temp_path = temp_file.name
 
         blob.download_to_filename(temp_path)
-        mime_type = blob.content_type or mimetypes.guess_type(object_name)[0] or "application/octet-stream"
         with open(temp_path, "rb") as media_file:
             content = media_file.read()
+        mime_type = (
+            detect_image_mime_type(content)
+            or blob.content_type
+            or mimetypes.guess_type(object_name)[0]
+            or "application/octet-stream"
+        )
 
         return {
             "bucket": bucket_name,
