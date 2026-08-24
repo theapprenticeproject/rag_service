@@ -17,7 +17,7 @@ class VideoEvaluationGenerator(EvaluationGenerator):
         media_service = None
         media_asset = None
         try:
-            print("\n=== Starting AI Feedback Generation (Image) ===")
+            print("\n=== Starting AI Feedback Generation (Video) ===")
 
             llm_provider, model_used = self._create_llm_provider("Gemini")
             
