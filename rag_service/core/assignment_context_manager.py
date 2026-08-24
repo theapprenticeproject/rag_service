@@ -46,7 +46,7 @@ class AssignmentContextManager:
 
         return formatted_objectives
 
-    async def get_assignment_context(self, assignment_id: str, student_id: str) -> Dict:
+    async def get_assignment_context(self, assignment_id: str) -> Dict:
         """Get assignment context from cache or API"""
         try:
             print(f"\n=== Getting Assignment Context for: {assignment_id} ===")

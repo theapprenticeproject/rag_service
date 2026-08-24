@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import requests
 from together import Together
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from .llm_interface import BaseLLMInterface
 import vertexai
 from google.oauth2 import service_account
