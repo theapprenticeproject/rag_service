@@ -301,14 +301,14 @@ class FeedbackService:
         """Create feedback for system errors"""
 
         feedback = {
-            "overall_feedback": "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor.",
-            "overall_feedback_translated": "I encountered a system error while processing your submission. This appears to be a technical issue on our end. Please try resubmitting, and if the issue persists, contact your instructor.",
+            "overall_feedback": "I encountered a system error while processing your submission. This appears to be a technical issue on our end.",
+            "overall_feedback_translated": "I encountered a system error while processing your submission. This appears to be a technical issue on our end. ",
             "strengths": [f"Your submission was received successfully but system encountered an error during processing.{error_msg}"],
             "areas_for_improvement": ["No issues identified with your submission - this appears to be a technical problem"],
-            "learning_objectives_feedback": ["Unable to evaluate due to system error - please resubmit"],
+            "learning_objectives_feedback": ["Unable to evaluate due to system error."],
             "final_grade": 0,
             "submission_validity": "Valid" ,
-            "encouragement": "Technical issues don't reflect your effort or ability - please try again!",
+            "encouragement": "Technical issues don't reflect your effort or ability.",
             "rubric_evaluations": [{
                                         "Skill": "Content Knowledge",
                                         "grade_value": 2,

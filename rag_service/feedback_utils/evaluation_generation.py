@@ -160,10 +160,14 @@ class EvaluationGenerator:
 
 
 
+            template_course_vertical = (
+                "Science Lab" if course_vertical == "Science" else course_vertical
+            )
+
             templates = frappe.get_list(
                 "Prompt Template",
                 filters={"is_active": 1, "media_type": media_type, "prompt_type": prompt_type, 
-                         "activity_type": activity_type, "course_vertical": course_vertical },
+                         "activity_type": activity_type, "course_vertical": template_course_vertical },
                 order_by="version desc",
                 limit=1,
             )
