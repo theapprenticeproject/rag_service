@@ -5,3 +5,7 @@
 tags
 node_modules
 __pycache__
+*scratch*
+*.vscode
+*/private/*
+*test_consumer_payload.py

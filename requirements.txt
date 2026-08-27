@@ -1,2 +1,7 @@
-pikka
+pika
+langchain-core
 langchain_openai
+aiohttp
+requests
+numpy
+opencv-python

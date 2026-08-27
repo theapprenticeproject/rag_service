@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
-import json
 
 class BaseLLMInterface(ABC):
     """Base interface for all LLM providers"""
@@ -22,6 +21,12 @@ class BaseLLMInterface(ABC):
     async def generate_with_vision(self, messages: List[Dict]) -> str:
         """Generate response from vision-enabled LLM"""
         pass
+
+    async def generate_with_video(self, video_source, prompt: str, mime_type: Optional[str] = None):
+        raise NotImplementedError("Video generation is not supported by this provider")
+
+    async def generate_with_audio(self, audio_source, prompt: str, mime_type: Optional[str] = None):
+        raise NotImplementedError("Audio generation is not supported by this provider")
     
     def format_messages(self, system_prompt: str, user_prompt: str, image_url: Optional[str] = None) -> List[Dict]:
         """Format messages for the specific LLM provider"""

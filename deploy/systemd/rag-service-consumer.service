@@ -1,0 +1,23 @@
+[Unit]
+Description=RAG Service RabbitMQ Consumer for rag.dev
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=rag-dev
+WorkingDirectory=/home/rag-dev/frappe-bench
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/home/rag-dev/frappe-bench/env/bin:/home/rag-dev/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/rag-dev/.local/bin/bench --site rag.dev execute rag_service.scripts.console_consumer.start_consumer
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+KillSignal=SIGINT
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rag-service-consumer
+
+[Install]
+WantedBy=multi-user.target

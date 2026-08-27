@@ -1,54 +1,27 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2024-11-01 13:41:11.924246",
+ "creation": "2026-02-06 10:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "provider",
   "model_name",
-  "temperature",
-  "max_tokens",
-  "api_key",
-  "api_secret",
   "location",
   "project_id",
   "credentials_json",
+  "temperature",
+  "max_tokens",
   "is_active",
   "is_default",
   "description"
  ],
  "fields": [
   {
-   "fieldname": "provider",
-   "fieldtype": "Select",
-   "label": "LLM Provider",
-   "options": "OpenAI\nAnthropic\nTogether AI\nGemini\nCustom"
-  },
-  {
    "fieldname": "model_name",
    "fieldtype": "Data",
    "label": "Model Name"
   },
   {
-   "fieldname": "api_key",
-   "fieldtype": "Data",
-   "label": "API Key",
-   "length": 200
-  },
-  {
-   "default": "0.7",
-   "fieldname": "temperature",
-   "fieldtype": "Float",
-   "label": "Temperature"
-  },
-  {
-   "default": "1500",
-   "fieldname": "max_tokens",
-   "fieldtype": "Int",
-   "label": "Max Tokens"
-  },
-    {
    "default": "us-central1",
    "fieldname": "location",
    "fieldtype": "Data",
@@ -64,7 +37,20 @@
    "fieldtype": "Code",
    "in_list_view": 1,
    "label": "Service Account Credentials (JSON)",
-   "options": "JSON"
+   "options": "JSON",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "temperature",
+   "fieldtype": "Float",
+   "label": "Temperature"
+  },
+  {
+   "default": "2000",
+   "fieldname": "max_tokens",
+   "fieldtype": "Int",
+   "label": "Max Tokens"
   },
   {
    "default": "0",
@@ -82,20 +68,14 @@
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description"
-  },
-  {
-   "fieldname": "api_secret",
-   "fieldtype": "Password",
-   "label": "API Secret",
-   "length": 250
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-05-13 18:29:10.580186",
+ "modified": "2026-02-06 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Rag Service",
- "name": "LLM Settings",
+ "name": "Gemini Settings",
  "owner": "Administrator",
  "permissions": [
   {

@@ -7,11 +7,16 @@
  "field_order": [
   "assignment_id",
   "assignment_name",
+  "program_name",
   "course_vertical",
+  "activity_type",
   "description",
-  "rubric",
+  "rubrics",
   "learning_objectives",
   "difficulty_level",
+  "difficulty_tier",
+  "submission_guidelines",
+  "submission_rules",
   "last_updated",
   "version",
   "cache_valid_till",
@@ -36,8 +41,13 @@
    "fieldtype": "Data",
    "label": "Course Vertical"
   },
+{
+    "fieldname": "activity_type",
+    "fieldtype": "Data",
+    "label": "Activity Type"
+},
   {
-   "fieldname": "rubric",
+   "fieldname": "rubrics",
    "fieldtype": "Text",
    "label": "Rubric"
   },
@@ -87,6 +97,26 @@
    "fieldname": "max_score",
    "fieldtype": "Data",
    "label": "Max Score"
+  },
+  {
+   "fieldname": "program_name",
+   "fieldtype": "Data",
+   "label": "Program Name"
+  },
+  {
+   "fieldname": "difficulty_tier",
+   "fieldtype": "Data",
+   "label": "Difficulty Tier"
+  },
+  {
+   "fieldname": "submission_guidelines",
+   "fieldtype": "Text",
+   "label": "Submission Guidelines"
+  },
+  {
+   "fieldname": "submission_rules",
+   "fieldtype": "Text",
+   "label": "Submission Rules"
   },
   {
    "fieldname": "description",

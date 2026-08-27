@@ -1,14 +1,21 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "field:template_name",
  "creation": "2024-11-01 13:45:08.976278",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "template_name",
   "assignment_type",
-  "system_prompt",
-  "user_prompt",
+  "course_vertical",
+  "media_type",
+  "prompt_type",
+  "activity_type",
+  "system_segment",
+  "grading_segment",
+  "subject_segment",
+  "output_segment",
   "response_format",
   "variables",
   "is_active",
@@ -34,14 +41,66 @@
    "reqd": 1
   },
   {
-   "fieldname": "system_prompt",
-   "fieldtype": "Text",
-   "label": "System Prompt"
+   "fieldname": "course_vertical",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Course Vertical",
+   "options": "Arts\nDance\nCoding\nScience Lab\nElectronics\nFinancial Literacy\nCommerce",
+   "reqd": 1
   },
   {
-   "fieldname": "user_prompt",
-   "fieldtype": "Text",
-   "label": "User Prompt Template"
+   "default": "image",
+   "fieldname": "media_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Media Type",
+   "options": "image\nvideo\naudio\ntext",
+   "reqd": 1
+  },
+  {
+   "fieldname": "prompt_type",
+   "default": "feedback",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Prompt Type",
+   "options": "evaluation\nfeedback\nboth",
+   "reqd": 1
+  },
+  {
+    "fieldname": "activity_type",
+    "fieldtype": "Select",
+    "in_list_view": 1,
+    "label": "Activity Type",
+    "options": "Regular\nChallenge",
+    "reqd": 1
+  },
+  {
+   "fieldname": "system_segment",
+   "fieldtype": "Link",
+   "label": "System Segment",
+   "options": "Prompt Segment",
+   "reqd": 1
+  },
+  {
+   "fieldname": "grading_segment",
+   "fieldtype": "Link",
+   "label": "Grading Segment",
+   "options": "Prompt Segment",
+   "reqd": 1
+  },
+  {
+   "fieldname": "subject_segment",
+   "fieldtype": "Link",
+   "label": "Subject Segment",
+   "options": "Prompt Segment",
+   "reqd": 1
+  },
+  {
+   "fieldname": "output_segment",
+   "fieldtype": "Link",
+   "label": "Output Segment",
+   "options": "Prompt Segment",
+   "reqd": 1
   },
   {
    "fieldname": "response_format",
@@ -103,7 +162,9 @@
    "write": 1
   }
  ],
+ "search_fields": "template_name,media_type,prompt_type,course_vertical,activity_type,category,tags",
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "template_name"
 }
