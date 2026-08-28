@@ -1,7 +1,6 @@
-from rag_service.utils.rabbitmq_consumer import RabbitMQConsumer
-
-
 def start_consumer():
+    from rag_service.utils.rabbitmq_consumer import RabbitMQConsumer
+
     consumer = RabbitMQConsumer(debug=True)
 
     if not consumer.test_connection():
@@ -14,6 +13,6 @@ def start_consumer():
     except KeyboardInterrupt:
         print("RabbitMQ consumer stopped.", flush=True)
 
-
-if __name__ == "__main__":
-    start_consumer()
+# This file is intended to be pasted into bench console, where __name__ is
+# not a reliable trigger. Start explicitly after defining the helper.
+start_consumer()

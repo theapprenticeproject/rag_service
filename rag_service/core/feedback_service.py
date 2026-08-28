@@ -65,13 +65,8 @@ class FeedbackService:
     ) -> None:
         """Process and store feedback in Feedback Request DocType."""
         try:
-            print(f"\n=== Processing Feedback for Request: {request_id} ===")
-
             # Get the feedback request document
             feedback_request = frappe.get_doc("Feedback Request", request_id)
-            print(f"Found Feedback Request: {feedback_request.name}")
-
-            print("\nUpdating Feedback Request fields...")
             # Update document fields using db_set
             feedback_request.db_set("status", "Completed", update_modified=True)
             feedback_request.db_set(
@@ -104,8 +99,6 @@ class FeedbackService:
 
             # Send to TAP LMS queue
             self.queue_manager.send_feedback_to_tap(message)
-
-            print(f"\nFeedback processed and sent for request: {request_id}")
 
             print("Payload sent to TAP LMS queue:")
             print(json.dumps(message, indent=2, ensure_ascii=False))

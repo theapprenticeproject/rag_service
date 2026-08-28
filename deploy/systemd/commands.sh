@@ -6,3 +6,5 @@ sudo systemctl status rag-service-consumer.service
 sudo systemctl daemon-reload
 sudo systemctl restart rag-service-consumer.service
 journalctl -u rag-service-consumer.service -f
+
+sudo systemctl stop rag-service-consumer.service

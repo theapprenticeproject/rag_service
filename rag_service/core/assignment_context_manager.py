@@ -135,7 +135,6 @@ class AssignmentContextManager:
             # print("#############")
             # print(data)
             # print("#############")
-            print("API request successful")
             return data
             
         except requests.RequestException as e:

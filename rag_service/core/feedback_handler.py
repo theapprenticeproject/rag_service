@@ -39,7 +39,6 @@ class FeedbackHandler:
             if not assignment_context:
                 raise ValueError(f"Could not get context for assignment: {message_data['assignment_id']}")
             
-            print("\nGenerating feedback...")
             # Generate feedback
             feedback, model_used, template_used = await self.feedback_service.generate_feedback(
                 assignment_context=assignment_context,
