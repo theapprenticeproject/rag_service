@@ -382,6 +382,76 @@ class EvaluationGenerator:
             return
         frappe.db.set_value("Prompt Segment", segment_name, "last_used", datetime.now(), update_modified=False)
 
+    def _eval_provider(self) -> str:
+        """Which provider runs the LLM evaluation stage. Defaults to Kaapi;
+        set env RAG_EVAL_PROVIDER (e.g. "Anthropic") to roll back."""
+        import os
+        return os.environ.get("RAG_EVAL_PROVIDER", "Kaapi")
+
+    def _prepare_eval(
+        self,
+        assignment_context: Dict,
+        submission_data: Dict,
+        media_type: str,
+    ) -> Dict[str, Any]:
+        """Everything that happens BEFORE the model call: resolve the provider,
+        fetch the prompt template, and render the prompt.
+
+        Returns a plain dict the caller can use to (a) make the model call inline
+        (the real-time path) or (b) ship `combined_prompt` (+ image) to Kaapi's
+        ASSESSMENT batch API (the nightly submit phase). No model call happens here.
+        """
+        provider_name = self._eval_provider()
+        llm_provider, model_used = self._create_llm_provider(provider_name)
+
+        activity_type = assignment_context["assignment"].get("activity_type")
+        course_vertical = assignment_context["assignment"].get("course_vertical")
+        if media_type == "text":
+            # Preserve the existing text path's hard override.
+            course_vertical = "Arts"
+
+        template = self.get_prompt_template(media_type, "both", activity_type, course_vertical)
+        expected_format = self._get_expected_format(template)
+        system_prompt, formatted_user_prompt = self._format_prompts(
+            template,
+            assignment_context,
+            submission_data,
+            [],
+        )
+
+        return {
+            "provider_name": provider_name,
+            "llm_provider": llm_provider,
+            "model_used": model_used,
+            "template": template,
+            "template_used": self._template_used_name(template),
+            "expected_format": expected_format,
+            "system_prompt": system_prompt,
+            "formatted_user_prompt": formatted_user_prompt,
+            "combined_prompt": f"{system_prompt}\n\n{formatted_user_prompt}",
+        }
+
+    def finalize_feedback(
+        self,
+        raw_text: str,
+        expected_format: Dict,
+        cost: Any,
+        log_prob: Optional[float] = None,
+    ) -> Dict:
+        """Everything that happens AFTER the model call: parse the raw output into
+        the feedback structure, attach plagiarism defaults + default fields, and set
+        the cost/log-prob markers. Shared by the real-time path and the Kaapi webhook
+        path (which passes Kaapi's returned JSON as `raw_text`)."""
+        feedback = self._parse_feedback(raw_text, expected_format)
+        feedback = self._attach_plagiarism_defaults(feedback)
+        feedback = self._attach_default_fileds(feedback)
+        feedback["strengths"] = [
+            f"cost:{cost}",
+            f"Feedback_LP:{log_prob if log_prob is not None else 0.0}",
+            f"Eval_LP:{0.0}",
+        ]
+        return feedback
+
     def _create_llm_provider(
         self,
         llm_provider_name: str = "Gemini",
