@@ -3,7 +3,7 @@
 import frappe
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, Dict
 from frappe.utils import now_datetime
 
@@ -20,31 +20,8 @@ class AssignmentContextManager:
         print(f"Using API Endpoint: {self.settings.base_url.rstrip('/')}/{self.settings.assignment_context_endpoint.lstrip('/')}")
 
     @staticmethod
-    def _safe_text(value: Any, default: str = "") -> str:
-        """Return a stripped string while treating explicit None as missing."""
-        if value is None:
-            return default
-        return str(value).strip()
-
-    @staticmethod
     def _json_dumps(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False)
-
-    def _format_learning_objectives(self, learning_objectives: Any) -> list:
-        if not learning_objectives:
-            return []
-
-        formatted_objectives = []
-        for obj in learning_objectives:
-            if not isinstance(obj, dict):
-                continue
-
-            formatted_objectives.append({
-                "objective_id": self._safe_text(obj.get("objective"), "Unknown"),
-                "description": self._safe_text(obj.get("description"))
-            })
-
-        return formatted_objectives
 
     async def get_assignment_context(self, assignment_id: str) -> Dict:
         """Get assignment context from cache or API"""
@@ -55,23 +32,23 @@ class AssignmentContextManager:
             
             # Check cache if enabled
             if self.settings.enable_caching:
+                cache_duration = self.settings.cache_duration_days or 1
+                cache_updated_after = now_datetime() - timedelta(days=cache_duration)
                 cached_context = frappe.get_list(
                     "Assignment Context",
                     filters={
-                        "assignment_id": assignment_id,
-                        "cache_valid_till": [">", now_datetime()]
+                        "name": assignment_id,
+                        "update_time": [">", cache_updated_after]
                     },
+                    fields=["name", "context"],
                     limit=1
                 )
                 
                 if cached_context:
                     print("Found cached context")
-                    cached_context = frappe.get_doc("Assignment Context", cached_context[0].name).as_dict()
-                    # remove fields where value is a datatime object
-                    for key in list(cached_context.keys()):
-                        if isinstance(cached_context[key], datetime):
-                            cached_context.pop(key, None)
-                    context = {"assignment": cached_context,}
+                    raw_context = cached_context[0].get("context")
+                    if raw_context:
+                        context = json.loads(raw_context)
 
             if not context:
                 # If not in cache or caching disabled, fetch from API
@@ -177,58 +154,17 @@ class AssignmentContextManager:
     async def _save_to_cache(self, assignment_id: str, context: Dict) -> None:
         """Save assignment context to cache"""
         try:
-            # Calculate cache expiry
-            cache_duration = self.settings.cache_duration_days or 1
-            cache_valid_till = now_datetime() + timedelta(days=cache_duration)
-            
-            # Extract assignment data
-            assignment = context["assignment"]
-            learning_objectives = context.get("learning_objectives", [])
-            
-            # Parse assignment type properly
-            assignment_type = self._safe_text(assignment.get("assignment_type"), "Practical")
-            course_vertical = self._safe_text(assignment.get("course_vertical"), "General")
-            activity_type = self._safe_text(assignment.get("activity_type"))
-            program_name = self._safe_text(assignment.get("program_name"))
-            difficulty_tier = self._safe_text(assignment.get("difficulty_tier"))
-            submission_guidelines = self._safe_text(assignment.get("submission_guidelines"))
-            submission_rules = self._json_dumps(assignment.get("submission_rules", []))
-            print(f"Parsed assignment type: {assignment_type}, course vertical: {course_vertical}, activity type: {activity_type}, program name: {program_name}, difficulty tier: {difficulty_tier}")
-            
-            # If type is empty or invalid, default to Practical
-
-            
-            # Prepare learning objectives JSON
-            formatted_objectives = self._format_learning_objectives(learning_objectives)
-            
-            # Check for existing context
-            existing = frappe.get_list(
-                "Assignment Context",
-                filters={"assignment_id": assignment_id},
-                limit=1
-            )
+            update_time = now_datetime()
+            payload = self._json_dumps(context)
+            existing = frappe.db.exists("Assignment Context", assignment_id)
             
             if existing:
                 # Update existing
-                doc = frappe.get_doc("Assignment Context", existing[0].name)
+                doc = frappe.get_doc("Assignment Context", existing)
                 doc.update({
-                    "assignment_name": self._safe_text(assignment.get("name")),
-                    "course_vertical": course_vertical,
-                    "assignment_type": assignment_type,
-                    "activity_type": activity_type,
-                    "reference_image": self._safe_text(assignment.get("reference_image")),
-                    "description": self._safe_text(assignment.get("description")),
-                    "learning_objectives": self._json_dumps(formatted_objectives),
-                    "max_score": self._safe_text(assignment.get("max_score"), "100"),
-                    "program_name": program_name,
-                    "difficulty_tier": difficulty_tier,
-                    "submission_guidelines": submission_guidelines,
-                    "submission_rules": submission_rules,
-                    "last_updated": now_datetime(),
-                    "cache_valid_till": cache_valid_till,
-                    "last_sync_status": "Success",
-                    "version": (doc.version or 0) + 1,
-                    "rubrics": self._json_dumps(assignment.get("rubrics", {}))
+                    "assignment_id": assignment_id,
+                    "update_time": update_time,
+                    "context": payload
                 })
                 doc.save()
                 print(f"Updated existing cache for assignment {assignment_id}")
@@ -236,25 +172,10 @@ class AssignmentContextManager:
                 # Create new
                 doc = frappe.get_doc({
                     "doctype": "Assignment Context",
+                    "name": assignment_id,
                     "assignment_id": assignment_id,
-                    "assignment_name": self._safe_text(assignment.get("name")),
-                    "course_vertical": course_vertical,
-                    "assignment_type": assignment_type,
-                    "activity_type": activity_type,
-                    "reference_image": self._safe_text(assignment.get("reference_image")),
-                    "description": self._safe_text(assignment.get("description")),
-                    "learning_objectives": self._json_dumps(formatted_objectives),
-                    "max_score": self._safe_text(assignment.get("max_score"), "100"),
-                    "difficulty_level": "Medium",  # Default value
-                    "program_name": program_name,
-                    "difficulty_tier": difficulty_tier,
-                    "submission_guidelines": submission_guidelines,
-                    "submission_rules": submission_rules,
-                    "last_updated": now_datetime(),
-                    "cache_valid_till": cache_valid_till,
-                    "last_sync_status": "Success",
-                    "version": 1,
-                    "rubrics": self._json_dumps(assignment.get("rubrics", {}))
+                    "update_time": update_time,
+                    "context": payload
                 })
                 doc.insert()
                 print(f"Created new cache for assignment {assignment_id}")

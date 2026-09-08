@@ -49,10 +49,14 @@ class TextEvaluationGenerator(EvaluationGenerator):
             return feedback, model_used, self._template_used_name(template)
 
         except Exception as e:
-            error_msg = f"Error generating text feedback for submission {submission_id}: {str(e)}\n{traceback.format_exc()}"
+            error_detail = str(e) or repr(e)
+            error_msg = (
+                f"Error generating text feedback for submission {submission_id}: "
+                f"{error_detail}\n{traceback.format_exc()}"
+            )
             print(f"\nError: {error_msg}")
             frappe.log_error(message=error_msg, title="Text Feedback Generation Error")
-            error_feedback = self.feedback_service.create_error_feedback(str(e))
+            error_feedback = self.feedback_service.create_error_feedback(error_detail)
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
             error_feedback["strengths"] = ["cost:0", "Feedback_LP:0.0", "Eval_LP:0.0"]
             return error_feedback, "N/A", "Built-in Universal Template for Error"

@@ -1,5 +1,6 @@
 # rag_service/rag_service/feedback_utils/video_evaluation.py
 
+import traceback
 from typing import Dict, Tuple
 
 import frappe
@@ -58,16 +59,20 @@ class VideoEvaluationGenerator(EvaluationGenerator):
 
             template_used = self._template_used_name(template)
 
-            print("\n=== Image Feedback Generation Completed ===")
+            print("\n===Feedback Generation Completed ===")
             return feedback, model_used, template_used
 
         except Exception as e:
-            error_msg = f"Error generating image feedback for submission {submission_id}: {str(e)}"
+            error_detail = str(e) or repr(e)
+            error_msg = (
+                f"Error generating video feedback for submission {submission_id}: "
+                f"{error_detail}\n{traceback.format_exc()}"
+            )
             print(f"\nError: {error_msg}")
-            frappe.log_error(message=error_msg, title="Image Feedback Generation Error")
+            frappe.log_error(message=error_msg, title="Video Feedback Generation Error")
 
             template_used = "Built-in Universal Template for Error"
-            error_feedback = self.feedback_service.create_error_feedback(str(e))
+            error_feedback = self.feedback_service.create_error_feedback(error_detail)
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
             error_feedback['strengths'] = ["cost:1", f"Feedback_LP:0.89", f"Eval_LP:0.78"]
             return error_feedback, "N/A", template_used
