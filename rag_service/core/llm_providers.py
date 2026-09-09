@@ -1,10 +1,12 @@
 # rag_service/rag_service/core/llm_providers.py
 
+import asyncio
 import base64
 import json
 import mimetypes
 import os
 import tempfile
+import time
 from typing import Any, List, Dict, Optional
 from urllib.parse import urlparse
 
@@ -809,6 +811,205 @@ class GeminiProvider(BaseLLMInterface):
         cost = (input_tokens * (in_rate / 1_000_000)) + (output_tokens * (out_rate / 1_000_000))
         return round(cost, 6)
 
+
+class KaapiResponse:
+    """Response adapter for Kaapi, matching the surface used by the eval call sites
+    (`.text`, `.to_dict()` with a `candidates[].avg_logprobs` shape + `usage`)."""
+
+    def __init__(self, text: str, usage: Dict):
+        self.text = text or ""
+        self._usage = usage or {}
+
+    def to_dict(self) -> Dict:
+        # Kaapi does not expose token logprobs, so avg_logprobs is None.
+        return {"candidates": [{"avg_logprobs": None}], "usage": self._usage}
+
+
+class KaapiProvider(BaseLLMInterface):
+    """Runs the evaluation through the Kaapi platform's general LLM proxy
+    (`POST /api/v1/llm/call` + poll). Kaapi executes the model with its own
+    provider credentials; we send the prompt text (+ image URL for vision).
+
+    Auth: header `X-API-KEY: ApiKey <key>`. The key/model come from the LLM Settings
+    doctype (provider="Kaapi"); base URL defaults to https://api.kaapi.ai.
+    """
+
+    DEFAULT_BASE_URL = "https://api.kaapi.ai"
+    API_PREFIX = "/api/v1"
+    POLL_SECONDS = 3
+    TIMEOUT_SECONDS = 180
+    # Retries when /llm/call returns an empty output (a rare transient blip observed
+    # against the live API) — so a nightly row self-heals instead of being marked Failed.
+    EMPTY_OUTPUT_RETRIES = 2
+
+    # USD per 1M tokens, for the cost telemetry (Kaapi returns tokens, not cost).
+    PRICING = {
+        "gpt-4o": (2.50, 10.00),
+        "gpt-4o-mini": (0.15, 0.60),
+        "gemini-2.5-flash": (0.30, 2.50),
+        "gemini-3.5-flash": (0.30, 2.50),
+    }
+
+    def __init__(self, api_key: str, model_name: str, temperature: float = 0.7,
+                 max_tokens: int = 2000, settings: Any = None):
+        super().__init__(api_key, model_name or "gpt-4o", temperature, max_tokens)
+        self.settings = settings
+        self.api_key = self._resolve_api_key(api_key, settings)
+        self.base_url = self._resolve_base_url(settings)
+        # Which upstream provider Kaapi should call (OpenAI GPT-4o by default).
+        self.upstream_provider = os.environ.get("KAAPI_UPSTREAM_PROVIDER", "openai")
+        if not self.api_key:
+            raise ValueError("Kaapi API key is required (LLM Settings api_secret or KAAPI_API_KEY)")
+
+    # ---- config resolution ----
+    def _resolve_api_key(self, api_key: str, settings: Any) -> str:
+        if api_key and api_key.strip():
+            return api_key.strip()
+        if settings:
+            getter = getattr(settings, "get_password", None)
+            if callable(getter):
+                for f in ("api_secret", "api_key"):
+                    try:
+                        v = getter(f)
+                    except Exception:
+                        v = None
+                    if v:
+                        return str(v).strip()
+            for f in ("api_secret", "api_key"):
+                v = getattr(settings, f, None) or (settings.get(f) if hasattr(settings, "get") else None)
+                if v:
+                    return str(v).strip()
+        return os.environ.get("KAAPI_API_KEY", "").strip()
+
+    def _resolve_base_url(self, settings: Any) -> str:
+        # Base URL comes from env override or the default. NOTE: we intentionally do NOT
+        # read LLM Settings `location` — that field is the GCP region (for Gemini/Vertex)
+        # and defaults to us-central1, which is not the Kaapi host.
+        return self._normalize_base(os.environ.get("KAAPI_BASE_URL", self.DEFAULT_BASE_URL))
+
+    @staticmethod
+    def _normalize_base(url: str) -> str:
+        url = (url or "").strip().rstrip("/")
+        if url and not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        return url
+
+    # ---- http ----
+    def _headers(self) -> Dict:
+        key = self.api_key.strip()
+        value = key if key.lower().startswith("apikey ") else f"ApiKey {key}"
+        return {"X-API-KEY": value, "accept": "application/json",
+                "Content-Type": "application/json"}
+
+    def _unwrap(self, body: Dict) -> Dict:
+        if isinstance(body, dict) and "success" in body and "data" in body:
+            if not body.get("success", True):
+                raise Exception(f"Kaapi error: {body.get('error')}")
+            return body["data"]
+        return body
+
+    def _post(self, path: str, payload: Dict) -> Dict:
+        r = requests.post(f"{self.base_url}{self.API_PREFIX}{path}", json=payload,
+                          headers=self._headers(), timeout=60)
+        if not r.ok:
+            raise Exception(f"Kaapi POST {path} -> {r.status_code}: {r.text[:400]}")
+        return self._unwrap(r.json())
+
+    def _get(self, path: str) -> Dict:
+        r = requests.get(f"{self.base_url}{self.API_PREFIX}{path}",
+                         headers=self._headers(), timeout=60)
+        if not r.ok:
+            raise Exception(f"Kaapi GET {path} -> {r.status_code}: {r.text[:400]}")
+        return self._unwrap(r.json())
+
+    # ---- llm/call submit + poll ----
+    async def _run(self, input_parts):
+        """Submit + poll, retrying if Kaapi returns an empty output (transient)."""
+        text, usage = "", {}
+        for attempt in range(self.EMPTY_OUTPUT_RETRIES + 1):
+            text, usage = await self._run_once(input_parts)
+            if text and text.strip():
+                return text, usage
+            # empty output — retry (unless this was the last attempt)
+        return text, usage
+
+    async def _run_once(self, input_parts):
+        params = {"model": self.model_name}
+        if self.temperature is not None:
+            params["temperature"] = self.temperature
+        body = {
+            "query": {"input": input_parts},
+            "config": {"blob": {"completion": {
+                "type": "text", "provider": self.upstream_provider, "params": params}}},
+        }
+        data = self._post("/llm/call", body)
+        job_id = data.get("job_id")
+        if not job_id:
+            raise Exception(f"Kaapi /llm/call returned no job_id: {data}")
+        waited = 0
+        while waited <= self.TIMEOUT_SECONDS:
+            res = self._get(f"/llm/call/{job_id}")
+            status = res.get("status")
+            if status in ("SUCCESS", "FAILED"):
+                if status == "FAILED":
+                    raise Exception(f"Kaapi job failed: {res.get('error_message')}")
+                resp = ((res.get("llm_response") or {}).get("response") or {})
+                text = (resp.get("output", {}) or {}).get("content", {}).get("value", "")
+                usage = (res.get("llm_response") or {}).get("usage") or {}
+                return text, usage
+            await asyncio.sleep(self.POLL_SECONDS)
+            waited += self.POLL_SECONDS
+        raise Exception(f"Kaapi /llm/call {job_id} timed out after {self.TIMEOUT_SECONDS}s")
+
+    @staticmethod
+    def _text_part(value: str) -> Dict:
+        return {"type": "text", "content": {"format": "text", "value": value}}
+
+    @staticmethod
+    def _image_part(url: str) -> Dict:
+        return {"type": "image", "content": {"format": "url", "value": url}}
+
+    def _messages_to_text(self, messages: List[Dict]) -> str:
+        parts = []
+        for m in messages:
+            content = m.get("content", "")
+            if isinstance(content, list):
+                content = "\n".join(
+                    b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+                )
+            parts.append(str(content))
+        return "\n\n".join(p for p in parts if p)
+
+    @staticmethod
+    def _image_url(image_source) -> str:
+        if isinstance(image_source, str):
+            return image_source
+        if isinstance(image_source, dict):
+            for k in ("url", "source_url", "public_url", "gcs_url", "submission_url"):
+                if image_source.get(k):
+                    return image_source[k]
+        raise ValueError(
+            "KaapiProvider vision requires a public image URL (pass submission_url)")
+
+    # ---- public interface ----
+    async def generate(self, messages: List[Dict]):
+        text = self._messages_to_text(messages)
+        out, usage = await self._run([self._text_part(text)])
+        return out, self.calculate_cost({"usage": usage}), 0.0
+
+    async def generate_with_vision(self, image_source, prompt: str, mime_type: Optional[str] = None):
+        url = self._image_url(image_source)
+        out, usage = await self._run([self._text_part(prompt), self._image_part(url)])
+        return KaapiResponse(out, usage)
+
+    def calculate_cost(self, response) -> float:
+        usage = (response or {}).get("usage", {}) if isinstance(response, dict) else {}
+        pin, pout = self.PRICING.get(self.model_name, self.PRICING["gpt-4o"])
+        it = usage.get("input_tokens", 0) or 0
+        ot = usage.get("output_tokens", 0) or 0
+        return round(it / 1_000_000 * pin + ot / 1_000_000 * pout, 6)
+
+
 def create_llm_provider(
     provider: str,
     api_key: str,
@@ -824,6 +1025,7 @@ def create_llm_provider(
         "Anthropic": AnthropicProvider,
         "Together AI": TogetherAIProvider,
         "Gemini": GeminiProvider,
+        "Kaapi": KaapiProvider,
     }
     
     if provider not in providers:

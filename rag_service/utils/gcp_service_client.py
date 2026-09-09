@@ -2,6 +2,7 @@ import json
 import mimetypes
 import os
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, unquote
@@ -65,6 +66,18 @@ class GCPServiceClient:
         local_path = media_asset.get("local_path")
         if local_path and os.path.exists(local_path):
             os.remove(local_path)
+
+    def signed_url(self, media_url: str, expires_seconds: int = 3600) -> str:
+        """Return a short-lived V4 signed GET URL for a GCS object, so an external
+        service (e.g. Kaapi) can fetch a private object over plain HTTPS. Uses the
+        service-account credentials already configured in GCS Settings."""
+        bucket_name, object_name = self._parse_gcs_url(media_url)
+        blob = self.client.bucket(bucket_name).blob(object_name)
+        return blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(seconds=expires_seconds),
+            method="GET",
+        )
 
     def _parse_gcs_url(self, media_url: str) -> Tuple[str, str]:
         parsed = urlparse(media_url)

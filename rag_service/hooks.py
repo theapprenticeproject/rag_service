@@ -171,6 +171,17 @@ commands = [
 # 	],
 # }
 
+# Nightly batch grading: fire the overnight batch every day at 01:00 (server time).
+# It enqueues the actual run on the "long" queue (big timeout), so a large batch is not
+# limited by the default job timeout. Adjust the cron time as needed.
+scheduler_events = {
+	"cron": {
+		"0 1 * * *": [
+			"rag_service.core.batch_runner.enqueue_nightly_batch"
+		]
+	}
+}
+
 # Testing
 # -------
 
