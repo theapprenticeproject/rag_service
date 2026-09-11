@@ -17,7 +17,7 @@ class TextEvaluationGenerator(EvaluationGenerator):
         try:
             print("\n=== Starting AI Feedback Generation (Text) ===")
 
-            llm_provider, model_used = self._create_llm_provider("Anthropic")
+            llm_provider, model_used = self._create_llm_provider("Gemini")
             activity_type = assignment_context["assignment"].get("activity_type")
             course_vertical = assignment_context["assignment"].get("course_vertical")
             course_vertical = "Arts"
