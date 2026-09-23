@@ -12,7 +12,7 @@ def start_consumer(context):
     site = context.sites[0]
     frappe.init(site=site)
     frappe.connect()
-    
+
     try:
         consumer = RabbitMQConsumer()
         consumer.start_consuming()
@@ -21,6 +21,32 @@ def start_consumer(context):
     finally:
         frappe.destroy()
 
+
+@click.command('run-nightly-batch')
+@click.option('--page-size', default=100, help='Feedback Requests pulled per page')
+@click.option('--concurrency', default=8, help='How many to grade in parallel')
+@click.option('--max-items', default=0, help='Optional cap for a smoke test (0 = all)')
+@pass_context
+def run_nightly_batch_command(context, page_size, concurrency, max_items):
+    """Grade all Pending image/text submissions in parallel (overnight batch)."""
+    site = context.sites[0]
+    frappe.init(site=site)
+    frappe.connect()
+
+    try:
+        # relative import: commands/ and core/ are siblings, so this is layout-independent
+        from ..core.batch_runner import run_nightly_batch
+        summary = run_nightly_batch(
+            page_size=page_size, concurrency=concurrency, max_items=max_items
+        )
+        click.echo(f"Nightly batch done: {summary}")
+    except Exception as e:
+        click.echo(f"Error running nightly batch: {str(e)}")
+    finally:
+        frappe.destroy()
+
+
 commands = [
-    start_consumer
+    start_consumer,
+    run_nightly_batch_command,
 ]

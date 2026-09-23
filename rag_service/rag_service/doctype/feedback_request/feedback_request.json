@@ -7,6 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "student_id",
+  "grade",
+  "level",
+  "language",
   "assignment_id",
   "submission_id",
   "submission_type",
@@ -31,7 +34,11 @@
   "plagiarism_source",
   "is_ai_generated",
   "ai_detection_source",
-  "ai_confidence"
+  "ai_confidence",
+  "kaapi_assessment_id",
+  "kaapi_batch_index",
+  "kaapi_status",
+  "kaapi_context"
  ],
  "fields": [
   {
@@ -173,6 +180,47 @@
    "fieldname": "ai_confidence",
    "fieldtype": "Float",
    "label": "AI Confidence"
+  },
+  {
+   "fieldname": "grade",
+   "fieldtype": "Data",
+   "label": "Grade"
+  },
+  {
+   "fieldname": "level",
+   "fieldtype": "Data",
+   "label": "Level"
+  },
+  {
+   "fieldname": "language",
+   "fieldtype": "Data",
+   "label": "Language"
+  },
+  {
+   "fieldname": "kaapi_assessment_id",
+   "fieldtype": "Data",
+   "label": "Kaapi Assessment ID",
+   "description": "Batch id returned by Kaapi /assessments; used to correlate the webhook result"
+  },
+  {
+   "fieldname": "kaapi_batch_index",
+   "fieldtype": "Int",
+   "label": "Kaapi Batch Index",
+   "default": "-1",
+   "description": "This row's 0-based position in the submitted Kaapi batch (primary correlation key: items[i] <-> this row)"
+  },
+  {
+   "fieldname": "kaapi_status",
+   "fieldtype": "Select",
+   "label": "Kaapi Status",
+   "options": "\nSubmitted\nCompleted\nFailed",
+   "description": "Lifecycle of the Kaapi ASSESSMENT submission for this row"
+  },
+  {
+   "fieldname": "kaapi_context",
+   "fieldtype": "Long Text",
+   "label": "Kaapi Context",
+   "description": "JSON captured at submit time (expected_format, model_used, template_used) so the webhook can finalize feedback without re-deriving it"
   }
  ],
  "index_web_pages_for_search": 1,

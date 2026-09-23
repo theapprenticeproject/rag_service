@@ -1,5 +1,6 @@
 # rag_service/rag_service/core/feedback_handler.py
 
+import os
 import frappe
 import json
 from datetime import datetime
@@ -9,6 +10,17 @@ from ..core.assignment_context_manager import AssignmentContextManager
 from ..utils.queue_manager import QueueManager
 from ..utils.submission_data import build_submission_content, normalize_submission_payload
 
+# Submission types that are DEFERRED to the nightly batch when batch mode is on.
+# Audio/video are always processed in real time (not handled by the batch grader).
+DEFERRED_SUBMISSION_TYPES = {"image", "text", "emoji"}
+
+
+def batch_mode_enabled() -> bool:
+    """When on, image/text submissions are saved as Pending and graded by the
+    nightly batch instead of in real time. Toggle off with env RAG_BATCH_MODE=0."""
+    return os.environ.get("RAG_BATCH_MODE", "1").strip().lower() not in ("0", "false", "no", "")
+
+
 class FeedbackHandler:
     def __init__(self):
         self.feedback_service = FeedbackService()
@@ -17,10 +29,20 @@ class FeedbackHandler:
 
     async def handle_submission(self, message_data: Dict) -> None:
         """Handle a new submission from plagiarism queue"""
+        submission_data = normalize_submission_payload(message_data)
+        submission_type = (submission_data.get("submission_type") or "").lower()
+
+        # Batch mode: image/text are DEFERRED — save a Pending record and stop
+        # (the nightly batch grades them). Audio/video keep processing in real time.
+        if batch_mode_enabled() and submission_type in DEFERRED_SUBMISSION_TYPES:
+            request_id = await self.create_feedback_request(
+                message_data, submission_data, status="Pending"
+            )
+            print(f"\nDeferred {submission_type} submission to nightly batch: {request_id}")
+            return
+
         request_id = None
         try:
-            submission_data = normalize_submission_payload(message_data)
-
             # Create or update feedback request
             request_id = await self.create_feedback_request(message_data, submission_data)
             print(f"\nFeedback Request Created/Updated: {request_id}")
@@ -82,8 +104,10 @@ class FeedbackHandler:
         return feedback
 
 
-    async def create_feedback_request(self, message_data: Dict, submission_data: Dict) -> str:
-        """Create or update feedback request"""
+    async def create_feedback_request(self, message_data: Dict, submission_data: Dict,
+                                      status: str = "Processing") -> str:
+        """Create or update feedback request. `status` lets the caller defer a
+        submission (status="Pending") for the nightly batch instead of processing now."""
         try:
             print("\n=== Creating/Updating Feedback Request ===")
             
@@ -102,12 +126,15 @@ class FeedbackHandler:
                 # Get and update existing document
                 feedback_request = frappe.get_doc("Feedback Request", request_id)
                 feedback_request.processing_attempts += 1
-                feedback_request.status = "Processing"
+                feedback_request.status = status
                 feedback_request.error_log = None  # Clear previous errors
                 feedback_request.submission_type = submission_data["submission_type"]
                 feedback_request.submission_url = submission_data["submission_url"]
                 feedback_request.submission_text = submission_data["submission_text"]
                 feedback_request.submission_content = build_submission_content(submission_data)
+                feedback_request.grade = message_data.get("grade")
+                feedback_request.level = message_data.get("level")
+                feedback_request.language = message_data.get("language")
                 feedback_request.save()
                 
             else:
@@ -117,6 +144,9 @@ class FeedbackHandler:
                     "submission_id": message_data["submission_id"],
                     "student_id": message_data["student_id"],
                     "assignment_id": message_data["assignment_id"],
+                    "grade": message_data.get("grade"),
+                    "level": message_data.get("level"),
+                    "language": message_data.get("language"),
                     "submission_type": submission_data["submission_type"],
                     "submission_url": submission_data["submission_url"],
                     "submission_text": submission_data["submission_text"],
@@ -129,7 +159,7 @@ class FeedbackHandler:
                     "ai_confidence": message_data.get("ai_confidence", 0.0),
                     "similar_sources": json.dumps(message_data.get("similar_sources", [])),
                     "ai_detection_source": message_data.get("ai_detection_source", "unknown"),
-                    "status": "Processing",
+                    "status": status,
                     "created_at": datetime.now(),
                     "processing_attempts": 1
                 })

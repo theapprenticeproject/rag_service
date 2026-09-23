@@ -23,7 +23,7 @@
    "fieldname": "provider",
    "fieldtype": "Select",
    "label": "LLM Provider",
-   "options": "OpenAI\nAnthropic\nTogether AI\nGemini\nCustom"
+   "options": "OpenAI\nAnthropic\nTogether AI\nGemini\nKaapi\nCustom"
   },
   {
    "fieldname": "model_name",
@@ -48,7 +48,7 @@
    "fieldtype": "Int",
    "label": "Max Tokens"
   },
-    {
+  {
    "default": "us-central1",
    "fieldname": "location",
    "fieldtype": "Data",
