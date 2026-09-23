@@ -38,10 +38,7 @@ class QueueManager:
             self.channel.confirm_delivery()
             
             # Queue exists and topology is managed by another service (LMS)
-            print(f"Connected to RabbitMQ. Will publish to queue: {self.settings.feedback_results_queue}")
-            
-            print("\nConnected to RabbitMQ successfully")
-            
+            print(f"Connected to RabbitMQ. Will publish to queue: {self.settings.feedback_results_queue}")            
         except Exception as e:
             error_msg = f"RabbitMQ Connection Error for producer: {str(e)}\n{traceback.format_exc()}"
             print(f"\nError: {error_msg}")
@@ -60,7 +57,6 @@ class QueueManager:
     def send_feedback_to_tap(self, feedback_data: Dict) -> None:
         """Send feedback to TAP LMS queue"""
         try:
-            print("\n=== Sending Feedback to TAP LMS ===")
             print(f"Queue: {self.settings.feedback_results_queue}")
             
             self.connect()

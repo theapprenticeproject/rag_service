@@ -1,5 +1,6 @@
 # rag_service/rag_service/feedback_utils/audio_evaluation.py
 
+import traceback
 from typing import Dict, Tuple
 
 import frappe
@@ -56,10 +57,14 @@ class AudioEvaluationGenerator(EvaluationGenerator):
             return feedback, model_used, self._template_used_name(template)
 
         except Exception as e:
-            error_msg = f"Error generating audio feedback for submission {submission_id}: {str(e)}"
+            error_detail = str(e) or repr(e)
+            error_msg = (
+                f"Error generating audio feedback for submission {submission_id}: "
+                f"{error_detail}\n{traceback.format_exc()}"
+            )
             print(f"\nError: {error_msg}")
             frappe.log_error(message=error_msg, title="Audio Feedback Generation Error")
-            error_feedback = self.feedback_service.create_error_feedback(str(e))
+            error_feedback = self.feedback_service.create_error_feedback(error_detail)
             error_feedback = self._attach_plagiarism_defaults(error_feedback)
             error_feedback["strengths"] = ["cost:1", "Feedback_LP:0.89", "Eval_LP:0.78"]
             return error_feedback, "N/A", "Built-in Universal Template for Error"

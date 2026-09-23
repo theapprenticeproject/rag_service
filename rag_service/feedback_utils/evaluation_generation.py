@@ -119,7 +119,7 @@ class EvaluationGenerator:
     def format_objectives(self, objectives: List[Dict]) -> str:
         """Format learning objectives for prompt."""
         if not objectives:
-            return "No specific learning objectives provided for this assignment."
+            return ""
 
         formatted = []
         for i, obj in enumerate(objectives, 1):
@@ -251,9 +251,10 @@ class EvaluationGenerator:
         )
 
         return {
-            "assignment_name": assignment_context.get("assignment", {}).get("assignment_name", ""),
-            "assignment_description": assignment_context.get("assignment", {}).get("description", ""),
+            "assignment_name": assignment_context.get("assignment", {}).get("name", ""),
+            "description": assignment_context.get("assignment", {}).get("description", ""),
             "course_vertical": assignment_context.get("assignment", {}).get("course_vertical", ""),
+            "submission_guidelines": assignment_context.get("assignment", {}).get("submission_guidelines", ""),
             "assignment_type": assignment_context.get("assignment", {}).get("assignment_type", "Practical"),
             "learning_objectives": learning_objectives,
             "rubric_evaluations": rubric_evaluations,
@@ -283,9 +284,9 @@ class EvaluationGenerator:
                 submission_data,
                 rubric_evaluations,
             )
-            # print("##############")
-            # print(prompt_vars)
-            # print("##############")
+            print("##############")
+            print(prompt_vars)
+            print("##############")
 
             system_segment = frappe.get_doc("Prompt Segment", template.system_segment)
             grading_segment = frappe.get_doc("Prompt Segment", template.grading_segment)
@@ -303,10 +304,9 @@ class EvaluationGenerator:
                 user_prompt_sections.append(prompt_vars["submission_text_context"])
 
             formatted_user_prompt = "\n\n".join(section for section in user_prompt_sections if section)
-            print("#"*80)
-            print(system_prompt)
-            print(formatted_user_prompt)
-            print("#"*80)
+            # print("#"*80)
+            # print(formatted_user_prompt)
+            # print("#"*80)
             return system_prompt, formatted_user_prompt
         except Exception as e:
             print(f"Error formatting prompt: {e}")
