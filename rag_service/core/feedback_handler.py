@@ -9,6 +9,7 @@ from ..core.feedback_service import FeedbackService
 from ..core.assignment_context_manager import AssignmentContextManager
 from ..utils.queue_manager import QueueManager
 from ..utils.submission_data import build_submission_content, normalize_submission_payload
+from ..rag_service.doctype.kaapi_settings.kaapi_settings import assessments_enabled
 
 # Submission types that are DEFERRED to the nightly batch when batch mode is on.
 # Audio/video are always processed in real time (not handled by the batch grader).
@@ -17,7 +18,10 @@ DEFERRED_SUBMISSION_TYPES = {"image", "text", "emoji"}
 
 def batch_mode_enabled() -> bool:
     """When on, image/text submissions are saved as Pending and graded by the
-    nightly batch instead of in real time. Toggle off with env RAG_BATCH_MODE=0."""
+    nightly batch instead of in real time. Kaapi assessments always require deferral;
+    RAG_BATCH_MODE controls only the legacy synchronous grading path."""
+    if assessments_enabled():
+        return True
     return os.environ.get("RAG_BATCH_MODE", "1").strip().lower() not in ("0", "false", "no", "")
 
 

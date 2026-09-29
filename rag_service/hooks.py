@@ -176,9 +176,14 @@ commands = [
 # limited by the default job timeout. Adjust the cron time as needed.
 scheduler_events = {
 	"cron": {
-		"0 1 * * *": [
+		# "0 1 * * *": [
+		# 	"rag_service.core.batch_runner.enqueue_nightly_batch"
+		# ]
+        # Run every 30 mins
+        "*/30 * * * *   ": [
 			"rag_service.core.batch_runner.enqueue_nightly_batch"
 		]
+        
 	}
 }
 

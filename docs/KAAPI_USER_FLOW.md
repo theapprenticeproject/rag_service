@@ -115,12 +115,14 @@ deliberate trade for the batch + credential architecture.
   fails safe (row re-graded) rather than mis-assigning a grade.
 
 ## Rollback
-Set `RAG_EVAL_MODE=llm_call` (or unset) → the nightly batch reverts to the synchronous
+Uncheck **Enable Assessments** in Kaapi Settings → the nightly batch reverts to the synchronous
 `/llm/call` grade-and-deliver path. No code change, no redeploy of logic.
 
 ## Configuration touchpoints
-- `RAG_EVAL_MODE=assessment` — enables this flow
-- `KAAPI_IMAGE_CONFIG_ID` / `KAAPI_TEXT_CONFIG_ID` (+ `_VERSION`) — the Kaapi configs
-- `KAAPI_CALLBACK_URL` — public webhook URL incl. `?token=<secret>`
-- `KAAPI_WEBHOOK_SECRET` — must equal the token in the callback URL
+- **Kaapi Settings → Enable Assessments** — enables this flow; no environment variables required
+- **Image/Text Config ID and Version** — the Kaapi configs
+- **API Key / Base URL** — Kaapi credentials and server
+- **Callback URL** — public webhook URL without a token
+- **Webhook Secret** — stored encrypted and appended to the callback URL automatically
+- **Allow Insecure Webhook** — leave unchecked in production
 - Nightly cron time — `hooks.py` `scheduler_events` (default 01:00)

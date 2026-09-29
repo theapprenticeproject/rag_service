@@ -37,7 +37,7 @@ docker exec -u frappe rag-bench-frappe-1 bash -lc '/home/frappe/frappe-bench/env
   langchain-openai pika together google-cloud-aiplatform google-cloud-storage opencv-python-headless'
 ```
 
-Apply the doctype changes (adds the `kaapi_*` fields):
+Apply the doctype changes (adds Kaapi Settings and the `kaapi_*` fields):
 ```bash
 docker exec -u frappe rag-bench-frappe-1 bash -lc 'cd /home/frappe/frappe-bench && bench --site rag.localhost migrate'
 ```
@@ -45,9 +45,7 @@ docker exec -u frappe rag-bench-frappe-1 bash -lc 'cd /home/frappe/frappe-bench 
 > When editing app code on the host, sync it into the bench app dir if the app is a copy rather
 > than a symlink to the mount: `cp <mount>/rag_service/... /home/frappe/frappe-bench/apps/rag_service/rag_service/...`
 
-Seed an LLM Settings row for Kaapi (holds the API key). In the Frappe UI (`/app`) or via
-`bench execute`, create an active `LLM Settings` with `provider=Kaapi`, `model_name=gpt-4o`,
-and the API key in `api_secret`.
+Assessments use **Kaapi Settings** (Part 3); no Kaapi LLM Settings row is required.
 
 ---
 
@@ -84,23 +82,15 @@ Note the returned `config_id`s (session values: image `67865d5f-…`, text `ec7c
 
 ---
 
-## Part 3 — Environment
+## Part 3 — Kaapi Settings
+Open `/app/kaapi-settings` as a System Manager. Follow the field table in
+`KAAPI_DEPLOY_CHECKLIST.md`: enter the API Key, Base URL, Image/Text Config IDs and Versions,
+Callback URL (without a token), and Webhook Secret, then check **Enable Assessments** and save.
+Keep **Allow Insecure Webhook** unchecked to test authentication. No bench environment variables
+are required; the submitter adds the encoded webhook token automatically.
 
-Set these where the bench processes can see them (the submit job and the web server):
-```bash
-export RAG_EVAL_MODE=assessment
-export KAAPI_API_KEY=<key>                 # or rely on LLM Settings
-export KAAPI_BASE_URL=https://api.kaapi.ai
-export KAAPI_IMAGE_CONFIG_ID=67865d5f-bc53-4708-9858-eb766132c0db
-export KAAPI_IMAGE_CONFIG_VERSION=1
-export KAAPI_TEXT_CONFIG_ID=ec7cb5ec-6403-4c8c-98e9-ed6c963d506f
-export KAAPI_TEXT_CONFIG_VERSION=1
-export KAAPI_WEBHOOK_SECRET=<secret>
-export KAAPI_CALLBACK_URL='https://<public-host>/api/method/rag_service.api.kaapi_webhook.receive?token=<secret>'
-```
-
-For a local test with no public host, point `KAAPI_CALLBACK_URL` at a webhook.site inbox (to
-capture Kaapi's payload) OR use a `cloudflared`/`ngrok` tunnel to your bench (Part 5b).
+For a local test with no public host, set Callback URL to a webhook.site inbox (to capture the
+payload), using a disposable test secret, or use a `cloudflared`/`ngrok` tunnel to your bench (Part 5b).
 
 ---
 
@@ -141,10 +131,7 @@ frappe.db.commit()
 
 ### 5a. Phase 1 — submit
 ```bash
-docker exec -u frappe -e RAG_EVAL_MODE=assessment \
-  -e KAAPI_IMAGE_CONFIG_ID=67865d5f-bc53-4708-9858-eb766132c0db -e KAAPI_IMAGE_CONFIG_VERSION=1 \
-  -e KAAPI_CALLBACK_URL='https://webhook.site/<your-uuid>' \
-  rag-bench-frappe-1 bash -lc \
+docker exec -u frappe rag-bench-frappe-1 bash -lc \
   'cd /home/frappe/frappe-bench && bench --site rag.localhost execute rag_service.core.batch_runner.run_submit_phase'
 ```
 Rows go `status=Processing`, `kaapi_status=Submitted`, and an `assessment_id` is stored. This
@@ -172,9 +159,9 @@ print(process_payload(json.load(open("/workspace/rag_service/_wh.json"))))
 ```
 
 **(ii) Real HTTP endpoint (proves `receive()` over HTTP).** Start the web server and POST the
-captured payload to the live endpoint:
+captured payload to the live endpoint (save `e2e-secret` as Webhook Secret in Kaapi Settings first):
 ```bash
-docker exec -d -e KAAPI_WEBHOOK_SECRET=e2e-secret rag-bench-frappe-1 \
+docker exec -d rag-bench-frappe-1 \
   bash -lc 'cd /home/frappe/frappe-bench && bench serve --port 8000'
 # wrong token -> 401 ; correct token -> {ok, completed:N}
 curl -s -H "Host: rag.localhost" -H "Content-Type: application/json" \
@@ -185,7 +172,7 @@ curl -s -H "Host: rag.localhost" -H "Content-Type: application/json" \
 **(iii) True end-to-end (Kaapi calls you).** Run a tunnel so Kaapi reaches your bench directly:
 ```bash
 cloudflared tunnel --url http://localhost:8000      # gives https://<random>.trycloudflare.com
-# set KAAPI_CALLBACK_URL=https://<random>.trycloudflare.com/api/method/rag_service.api.kaapi_webhook.receive?token=<secret>
+# save Callback URL in Kaapi Settings as https://<random>.trycloudflare.com/api/method/rag_service.api.kaapi_webhook.receive
 # re-run 5a; rows flip to Completed on their own when Kaapi calls back.
 ```
 
@@ -213,7 +200,8 @@ Failure/idempotency checks to try:
 ---
 
 ## Part 7 — Flip modes / cleanup
-- Enable the flow: `RAG_EVAL_MODE=assessment`. Roll back: unset it (or `=llm_call`).
+- Enable the flow: check **Enable Assessments** in Kaapi Settings. Roll back: uncheck it.
+  Keep Webhook Secret unchanged until outstanding batches finish.
 - Nightly cron (`hooks.py`, 01:00) runs `run_nightly_batch`, which dispatches to `run_submit_phase`
   in assessment mode.
 - Stop the bench: `cd rag-bench && docker compose down` (add `-v` to wipe volumes).

@@ -12,10 +12,12 @@ class TextEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for text and emoji submissions."""
 
     def build_eval_request(
-        self, assignment_context: Dict, submission_data: Dict
+        self, assignment_context: Dict, submission_data: Dict, *, for_assessment: bool = False
     ) -> Dict:
         """Everything before the model call, for text/emoji submissions (no image)."""
-        return self._prepare_eval(assignment_context, submission_data, "text")
+        return self._prepare_eval(
+            assignment_context, submission_data, "text", for_assessment=for_assessment
+        )
 
     async def generate_feedback(
         self, assignment_context: Dict, submission_data: Dict, submission_id: str

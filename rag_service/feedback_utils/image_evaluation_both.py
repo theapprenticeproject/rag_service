@@ -13,12 +13,14 @@ class ImageEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for image submissions."""
 
     def build_eval_request(
-        self, assignment_context: Dict, submission_data: Dict
+        self, assignment_context: Dict, submission_data: Dict, *, for_assessment: bool = False
     ) -> Dict:
         """Everything before the model call, for image submissions. Adds the image
         URL so the nightly Kaapi submit phase can pack it into the batch (Kaapi reads
         the `gs://` URL directly via the registered credential — no signing needed)."""
-        req = self._prepare_eval(assignment_context, submission_data, "image")
+        req = self._prepare_eval(
+            assignment_context, submission_data, "image", for_assessment=for_assessment
+        )
         req["image_url"] = submission_data.get("submission_url")
         return req
 

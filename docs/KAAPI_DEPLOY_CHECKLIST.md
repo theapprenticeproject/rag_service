@@ -14,32 +14,47 @@ it against the real Kaapi + LMS.
   - text:  `tap-text-grader-prod`  = `ec7cb5ec-6403-4c8c-98e9-ed6c963d506f` (v1)
 - [x] google-gcp credential registered in Kaapi (private-bucket reads).
 
-## 1. Frappe migrate (adds the 4 kaapi_* fields)
+## 1. Frappe migrate (adds Kaapi Settings and the kaapi_* fields)
 ```
 bench --site <site> migrate
 ```
 
-## 2. Environment / settings
-Set on the rag_service app environment (env or a settings doctype):
-```
-RAG_EVAL_MODE=assessment           # flips batch_runner to the submit phase
-RAG_EVAL_PROVIDER=Kaapi            # keep as-is (prompt rendering path)
-KAAPI_API_KEY=<key>                # or LLM Settings provider=Kaapi
-KAAPI_BASE_URL=https://api.kaapi.ai
-KAAPI_IMAGE_CONFIG_ID=67865d5f-bc53-4708-9858-eb766132c0db
-KAAPI_IMAGE_CONFIG_VERSION=1
-KAAPI_TEXT_CONFIG_ID=ec7cb5ec-6403-4c8c-98e9-ed6c963d506f
-KAAPI_TEXT_CONFIG_VERSION=1
-KAAPI_CALLBACK_URL=https://<public-rag-host>/api/method/rag_service.api.kaapi_webhook.receive?token=<secret>
-KAAPI_WEBHOOK_SECRET=<secret>      # must equal the token in KAAPI_CALLBACK_URL
-```
+## 2. Kaapi Settings (no environment variables)
+As a System Manager, open **Kaapi Settings** (`/app/kaapi-settings`) and save:
+
+| Field | Value |
+|---|---|
+| Enable Assessments | Checked |
+| API Key | Your Kaapi API key (encrypted Password field) |
+| Base URL | `https://api.kaapi.ai` (default; omit `/api/v1`) |
+| Image Config ID | `67865d5f-bc53-4708-9858-eb766132c0db` |
+| Image Config Version | `3` |
+| Text Config ID | `ec7cb5ec-6403-4c8c-98e9-ed6c963d506f` |
+| Text Config Version | `2` |
+| Callback URL | `https://<public-rag-host>/api/method/rag_service.api.kaapi_webhook.receive` |
+| Webhook Secret | A strong shared secret (encrypted Password field) |
+| Allow Insecure Webhook | Unchecked (local testing only) |
+
+The submitter appends the URL-encoded `token` from Webhook Secret automatically. Do not put
+the secret in Callback URL. Configure both media types when grading images and text/emoji;
+at least one config is required to enable assessments. Config versions must be positive integers.
+Kaapi's configs select the grading model/provider; assessments do not need an LLM Settings row.
+Existing RAG, RabbitMQ, GCS and prompt settings still serve their existing purposes.
+
+For existing deployments, copy the old environment values into this DocType before resuming
+the scheduler after migration. Preserve the existing Webhook Secret while batches await results.
+`KAAPI_*`, `RAG_EVAL_MODE`, `RAG_EVAL_PROVIDER` and `RAG_WEBHOOK_ALLOW_INSECURE` no longer
+configure assessments. Enabled assessments also ensure day-time deferral regardless of
+`RAG_BATCH_MODE`. Settings are site-specific and read by both workers and the web process;
+no environment setup or restart is needed when changing settings. Restart existing workers
+once when deploying this code so they load the new implementation.
 
 ## 3. Expose the webhook (infra)
 - [ ] Public HTTPS route to `/api/method/rag_service.api.kaapi_webhook.receive`, reachable
       from Kaapi's servers (through the LB/ingress).
 - [ ] Endpoint is guest-callable (already `@frappe.whitelist(allow_guest=True)`); it is
-      protected by the `?token=` secret. Do NOT set `RAG_WEBHOOK_ALLOW_INSECURE`.
-- [ ] Confirm the public URL matches `KAAPI_CALLBACK_URL` exactly (incl. the token).
+      protected by the `?token=` secret. Leave **Allow Insecure Webhook** unchecked.
+- [ ] Confirm **Callback URL** points to the public endpoint; the token is added automatically.
 
 ## 4. Smoke test on staging
 - [ ] Seed one Pending image + one Pending text Feedback Request (or let the normal
@@ -53,7 +68,7 @@ KAAPI_WEBHOOK_SECRET=<secret>      # must equal the token in KAAPI_CALLBACK_URL
 
 ## 5. Schedule
 - [x] Nightly cron already enqueues `enqueue_nightly_batch` (hooks.py, 01:00) →
-      `run_nightly_batch` → dispatches to `run_submit_phase` when `RAG_EVAL_MODE=assessment`.
+      `run_nightly_batch` → dispatches to `run_submit_phase` when **Enable Assessments** is checked.
 - [ ] Add a "stuck row" sweeper (rows in `kaapi_status=Submitted` beyond N hours →
       re-submit / alert), since results are webhook-only and can't be polled. (Open item #5.)
 
@@ -63,8 +78,9 @@ KAAPI_WEBHOOK_SECRET=<secret>      # must equal the token in KAAPI_CALLBACK_URL
       rows are processed).
 
 ## 7. Rollback
-- Set `RAG_EVAL_MODE=llm_call` (or unset) → `batch_runner` reverts to the synchronous
-  `/llm/call` path. No code change, no redeploy of logic.
+- Uncheck **Enable Assessments** in Kaapi Settings → `batch_runner` reverts to the synchronous
+  `/llm/call` path, which still uses its existing LLM Settings/provider configuration.
+  Keep Webhook Secret unchanged so already-submitted batches can finish.
 
 ## Notes / gotchas baked into the code
 - Correlation is by echoed `submission_id` (id-based, order-independent); `kaapi_batch_index` is

@@ -36,8 +36,9 @@ Kaapi returns the same JSON shape; the existing post-processing runs unchanged.
 | `feedback_utils/evaluation_generation.py` | Base `EvaluationGenerator`. Added `_prepare_eval()` (before model call) and `finalize_feedback()` (after model call). |
 | `feedback_utils/image_evaluation_both.py` | `ImageEvaluationGenerator.build_eval_request()` + refactored `generate_feedback()`. |
 | `feedback_utils/text_evaluation.py` | `TextEvaluationGenerator.build_eval_request()` + refactored `generate_feedback()`. |
+| `doctype/kaapi_settings/` | Site-specific settings, encrypted credentials, callback URL construction and validation. |
 | `core/kaapi_assessment.py` | **NEW.** `KaapiAssessmentClient` — the submit-side API client. |
-| `core/batch_runner.py` | Nightly batch. `run_submit_phase` (Phase 1) + `RAG_EVAL_MODE` dispatch; legacy sync path kept. |
+| `core/batch_runner.py` | Nightly batch. `run_submit_phase` (Phase 1) + Kaapi Settings dispatch; legacy sync path kept. |
 | `api/kaapi_webhook.py` | **NEW.** `receive()` (whitelisted endpoint) + `process_payload()` (Phase 2 logic). |
 | `core/feedback_handler.py` | Day-time deferral (image/text → `Pending`); unchanged by this work beyond earlier deferral. |
 | `core/feedback_service.py` | `process_feedback()` — delivery to the LMS queue (reused unchanged). |
@@ -75,7 +76,7 @@ def build_eval_request(self, assignment_context, submission_data):
 
 `generate_feedback()` now = `build_eval_request()` → model call → `finalize_feedback()`. Behavior
 is byte-identical (bench-verified), so the real-time path and rollback are untouched. The submit
-phase calls `build_eval_request()` (no model call); the webhook calls `finalize_feedback()` on
+phase calls `build_eval_request(..., for_assessment=True)` (no local LLM provider or credentials); the webhook calls `finalize_feedback()` on
 Kaapi's returned JSON.
 
 ---
@@ -87,18 +88,17 @@ Kaapi's returned JSON.
 client = KaapiAssessmentClient()
 assessment_id = client.submit(rows, media_type, request_metadata={"kind": media_type})
 ```
-- Auth: `X-API-KEY: ApiKey <key>` (key from `KAAPI_API_KEY` or LLM Settings provider=Kaapi).
-- `_config_for(media_type)` → `(config_id, version)` from env
-  (`KAAPI_IMAGE_CONFIG_*` / `KAAPI_TEXT_CONFIG_*`).
+- Auth: `X-API-KEY: ApiKey <key>` (encrypted API Key from Kaapi Settings).
+- `_config_for(media_type)` → `(config_id, version)` from the Image/Text Config fields in Kaapi Settings.
 - `submit()` POSTs `{config:{id,version}, input:{data:rows}, callback_url, request_metadata}`,
-  returns `data.assessment_id`. Requires `KAAPI_CALLBACK_URL` (webhook-only).
+  returns `data.assessment_id`. Requires Callback URL and Webhook Secret in Kaapi Settings (webhook-only); the token is appended automatically.
 - Each row: `{submission_id, rendered_prompt[, artwork_image]}` — shaped to the config's
   `input_schema`.
 
 ### batch_runner
 ```python
 def run_nightly_batch(...):          # dispatcher
-    if _assessment_mode():           # RAG_EVAL_MODE == "assessment"
+    if _assessment_mode():           # Kaapi Settings.enable_assessments
         return run_submit_phase(...)
     return _run_nightly_batch_sync(...)   # legacy /llm/call path (rollback)
 ```
@@ -115,6 +115,15 @@ def run_nightly_batch(...):          # dispatcher
 
 Resumable: submitted rows leave the `Pending` set; a re-run continues cleanly.
 
+Each outgoing assessment attempt is saved in **Kaapi Webhook Log** before the HTTP
+request. Filter **Direction = Outgoing** and open **Raw Body** for the complete JSON:
+config, all input rows (rendered prompts and image URLs), callback URL, and request
+metadata. Only the callback URL's secret token is redacted; the sent payload is unchanged.
+The log changes from `Submitting` to `Submitted` (with Assessment ID and response data)
+or `Error`. Payloads remain saved on HTTP failures. Incoming callbacks create separate
+`Incoming` entries, correlated by Assessment ID. Run `bench --site <site> migrate`
+before using these fields.
+
 ---
 
 ## 5. Phase 2 — webhook (`api/kaapi_webhook.py`)
@@ -130,8 +139,8 @@ def receive():
     return process_payload(payload)
 ```
 
-- `_verify_secret()` — compares `?token=` (or `X-Webhook-Secret`) to `KAAPI_WEBHOOK_SECRET`.
-  `RAG_WEBHOOK_ALLOW_INSECURE=1` bypasses (local testing only).
+- `_verify_secret()` — compares `?token=` (or `X-Webhook-Secret`) to the encrypted Webhook Secret
+  in Kaapi Settings using a constant-time comparison. Allow Insecure Webhook bypasses (local testing only).
 - `_extract(payload)` → `(assessment_id, items, total_items, status)`, tolerating the
   `{success, data:{...}}` envelope or the inner object.
 
@@ -193,18 +202,17 @@ Config bodies live in `Desktop/RRM/kaapi_config_{image,text}_prod.json`. Current
 
 ---
 
-## 8. Configuration (env)
-| Var | Meaning |
-|---|---|
-| `RAG_EVAL_MODE` | `assessment` = new flow; else legacy `/llm/call` |
-| `RAG_EVAL_PROVIDER` | prompt-render provider (default `Kaapi`) |
-| `KAAPI_API_KEY` | API key (else LLM Settings provider=Kaapi) |
-| `KAAPI_BASE_URL` | default `https://api.kaapi.ai` |
-| `KAAPI_IMAGE_CONFIG_ID` / `_VERSION` | image config |
-| `KAAPI_TEXT_CONFIG_ID` / `_VERSION` | text config |
-| `KAAPI_CALLBACK_URL` | public webhook URL incl. `?token=<secret>` |
-| `KAAPI_WEBHOOK_SECRET` | must equal the token in the callback URL |
-| `RAG_WEBHOOK_ALLOW_INSECURE` | `1` bypasses secret (local only) |
+## 8. Configuration (Kaapi Settings)
+Open `/app/kaapi-settings` as a System Manager. Configure Enable Assessments, Base URL,
+API Key, Image/Text Config IDs and Versions, Callback URL (without a token), and Webhook Secret.
+Keep Allow Insecure Webhook unchecked in production. API Key and Webhook Secret use encrypted
+Password fields. See `KAAPI_DEPLOY_CHECKLIST.md` for values and migration from environment variables.
+
+Assessments use only this singleton; no environment variables or local LLM Settings row are needed.
+Prompt preparation skips local provider creation with `for_assessment=True`; Kaapi's configs select
+its model/provider. Enabled assessments force day-time deferral. Disabling assessments selects the
+existing synchronous path, which retains its own provider configuration. Callbacks for batches
+already submitted remain authenticated and accepted when assessments are disabled.
 
 ---
 
@@ -226,7 +234,7 @@ Config bodies live in `Desktop/RRM/kaapi_config_{image,text}_prod.json`. Current
   `/home/frappe/frappe-bench/apps/rag_service` (sync edits from the mounted source when testing).
 - Migrate after doctype changes: `bench --site rag.localhost migrate`.
 - Run submit phase: `bench --site rag.localhost execute rag_service.core.batch_runner.run_submit_phase`.
-- Webhook over HTTP: start `bench serve --port 8000` (with `KAAPI_WEBHOOK_SECRET` in env), then
+- Webhook over HTTP: start `bench serve --port 8000` (with Webhook Secret saved in Kaapi Settings), then
   `POST` a Kaapi payload to `/api/method/rag_service.api.kaapi_webhook.receive?token=<secret>`.
 - Verified end-to-end on the bench with real `submissions.csv` images: 12 rows → real Kaapi
   grade → real webhook payload → HTTP POST to `receive()` → all delivered (401 on bad token).
@@ -235,7 +243,7 @@ Config bodies live in `Desktop/RRM/kaapi_config_{image,text}_prod.json`. Current
 
 ## 11. Extending
 - **New media type:** add a `_media_kind()` case, an evaluator with `build_eval_request()`, a
-  Kaapi config, and `KAAPI_<TYPE>_CONFIG_*` env.
+  Kaapi config, and matching Config fields in Kaapi Settings.
 - **Change feedback shape:** update the prompt template `response_format` AND the config's
   `json_output_schema` together (they must match).
 - **Stuck-row sweeper (TODO):** scheduled job → rows `kaapi_status=Submitted` older than N hours
@@ -244,5 +252,5 @@ Config bodies live in `Desktop/RRM/kaapi_config_{image,text}_prod.json`. Current
 ---
 
 ## 12. Rollback
-`RAG_EVAL_MODE=llm_call` (or unset) → `run_nightly_batch` reverts to the synchronous
+Uncheck **Enable Assessments** in Kaapi Settings → `run_nightly_batch` reverts to the synchronous
 `/llm/call` grade-and-deliver path. No code change, no logic redeploy.

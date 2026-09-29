@@ -23,7 +23,6 @@ Run:
   # or:  bench --site <site> execute rag_service.rag_service.core.batch_runner.run_nightly_batch
 """
 import json
-import os
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -31,14 +30,13 @@ from typing import Dict, List
 
 import frappe
 
+from ..rag_service.doctype.kaapi_settings.kaapi_settings import assessments_enabled
+
 # Must match feedback_handler.DEFERRED_SUBMISSION_TYPES.
 DEFERRED_SUBMISSION_TYPES = ["image", "text", "emoji"]
 
-# Which nightly grading path to run:
-#   "assessment" -> Kaapi ASSESSMENT API (submit batch now, webhook finishes later)
-#   anything else (default) -> the legacy synchronous /llm/call grade-in-threads path
 def _assessment_mode() -> bool:
-    return os.environ.get("RAG_EVAL_MODE", "llm_call").strip().lower() == "assessment"
+    return assessments_enabled()
 
 
 def _media_kind(submission_type: str) -> str:
@@ -175,6 +173,7 @@ async def _prepare_page(page: List[str]) -> Dict:
     from ..utils.submission_data import normalize_submission_payload
     from ..feedback_utils.image_evaluation_both import ImageEvaluationGenerator
     from ..feedback_utils.text_evaluation import TextEvaluationGenerator
+    from .kaapi_assessment import KaapiAssessmentClient
 
     fs = FeedbackService()
     buckets: Dict = {"image": [], "text": [], "flagged": 0, "failed": 0}
@@ -206,15 +205,15 @@ async def _prepare_page(page: List[str]) -> Dict:
             kind = _media_kind(fr.submission_type)
             gen = (ImageEvaluationGenerator(fs) if kind == "image"
                    else TextEvaluationGenerator(fs))
-            req = gen.build_eval_request(ctx, submission)
+            req = gen.build_eval_request(ctx, submission, for_assessment=True)
+            row = KaapiAssessmentClient.build_row(
+                fr_name, req["combined_prompt"], kind, req.get("image_url")
+            )
         except Exception as e:
             _mark_failed(fr_name, f"prepare failed: {e}")
             buckets["failed"] += 1
             continue
 
-        row = {"submission_id": fr_name, "rendered_prompt": req["combined_prompt"]}
-        if kind == "image":
-            row["artwork_image"] = req.get("image_url")
         webhook_ctx = {
             "expected_format": req["expected_format"],
             "model_used": req["model_used"],
@@ -304,8 +303,7 @@ def run_submit_phase(page_size: int = 100, max_items: int = 0) -> Dict:
 # Legacy synchronous grade path (/llm/call) + dispatcher
 # ---------------------------------------------------------------------------
 def run_nightly_batch(page_size: int = 100, concurrency: int = 8, max_items: int = 0) -> Dict:
-    """Nightly batch entrypoint. Dispatches on RAG_EVAL_MODE: 'assessment' runs the
-    Kaapi submit phase (webhook-completed); otherwise the legacy synchronous path."""
+    """Use Kaapi Settings to select assessments or the legacy synchronous path."""
     if _assessment_mode():
         return run_submit_phase(page_size=page_size, max_items=max_items)
     return _run_nightly_batch_sync(page_size=page_size, concurrency=concurrency, max_items=max_items)

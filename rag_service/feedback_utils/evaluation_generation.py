@@ -393,6 +393,8 @@ class EvaluationGenerator:
         assignment_context: Dict,
         submission_data: Dict,
         media_type: str,
+        *,
+        for_assessment: bool = False,
     ) -> Dict[str, Any]:
         """Everything that happens BEFORE the model call: resolve the provider,
         fetch the prompt template, and render the prompt.
@@ -401,8 +403,14 @@ class EvaluationGenerator:
         (the real-time path) or (b) ship `combined_prompt` (+ image) to Kaapi's
         ASSESSMENT batch API (the nightly submit phase). No model call happens here.
         """
-        provider_name = self._eval_provider()
-        llm_provider, model_used = self._create_llm_provider(provider_name)
+        if for_assessment:
+            # Kaapi's config owns the model. Rendering needs neither a local LLM
+            # provider nor its credentials, even when run_submit_phase is called directly.
+            provider_name = "Kaapi"
+            llm_provider, model_used = None, "Kaapi Assessment"
+        else:
+            provider_name = self._eval_provider()
+            llm_provider, model_used = self._create_llm_provider(provider_name)
 
         activity_type = assignment_context["assignment"].get("activity_type")
         course_vertical = assignment_context["assignment"].get("course_vertical")

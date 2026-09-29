@@ -12,8 +12,9 @@ Endpoint (whitelisted, guest-callable so Kaapi can reach it):
 
 Security: results are webhook-only and Kaapi does not send a custom auth header, so we
 protect the endpoint with a shared secret carried in the callback URL (query param
-`token`) and/or an `X-Webhook-Secret` header. Set KAAPI_WEBHOOK_SECRET and put the same
-token in KAAPI_CALLBACK_URL. Set RAG_WEBHOOK_ALLOW_INSECURE=1 to bypass (local testing).
+`token`) and/or an `X-Webhook-Secret` header. Configure Webhook Secret in Kaapi Settings;
+the submitter adds it to Callback URL automatically. Allow Insecure Webhook bypasses
+authentication for local testing only.
 
 Correlation (verified against the live API — see KAAPI_ASSESSMENT_SWITCH_SCOPE.md):
 - Results are POSITIONAL: items[i] <-> the row submitted at kaapi_batch_index i.
@@ -24,17 +25,21 @@ Correlation (verified against the live API — see KAAPI_ASSESSMENT_SWITCH_SCOPE
   counts.errors). Such rows are marked Failed and can be re-submitted next batch.
 """
 import json
-import os
+import hmac
 import asyncio
 from typing import Dict, List, Optional, Tuple
 
 import frappe
 
+from ..rag_service.doctype.kaapi_settings.kaapi_settings import get_kaapi_settings
+from ..core.kaapi_log_archive import enqueue_raw_body_upload
+
 
 def _verify_secret() -> bool:
-    if os.environ.get("RAG_WEBHOOK_ALLOW_INSECURE", "").strip() in ("1", "true", "yes"):
+    settings = get_kaapi_settings()
+    if settings.allow_insecure_webhook:
         return True
-    secret = os.environ.get("KAAPI_WEBHOOK_SECRET", "").strip()
+    secret = settings.get_secret("webhook_secret")
     if not secret:
         # No secret configured and insecure not explicitly allowed -> refuse.
         return False
@@ -45,7 +50,7 @@ def _verify_secret() -> bool:
                     or "")
     except Exception:
         provided = ""
-    return provided == secret
+    return hmac.compare_digest(provided.encode("utf-8"), secret.encode("utf-8"))
 
 
 def _raw_body() -> Dict:
@@ -91,22 +96,102 @@ def _finalize_and_deliver(fs, gen, fr_name: str, assessment: Dict, webhook_ctx: 
     frappe.db.commit()
 
 
+_REDACTED = "***"
+_SECRET_HEADERS = {"x-webhook-secret", "authorization", "cookie", "x-api-key"}
+
+
+def _log_request() -> Optional[str]:
+    """Save the incoming callback as a Kaapi Webhook Log BEFORE any processing, and
+    commit it straight away so later rollbacks in process_payload can't discard it.
+    Secrets (token query param, auth headers) are redacted. Never raises."""
+    try:
+        req = frappe.request
+        try:
+            raw = req.get_data(as_text=True)
+        except Exception:
+            raw = ""
+        query = {k: (_REDACTED if k == "token" else v) for k, v in req.args.items()}
+        headers = {k: (_REDACTED if k.lower() in _SECRET_HEADERS else v)
+                   for k, v in req.headers.items()}
+
+        assessment_id = status = None
+        try:
+            assessment_id, _items, _total, status = _extract(json.loads(raw))
+        except Exception:
+            pass  # not JSON / unexpected shape — the raw body is still saved
+
+        log = frappe.get_doc({
+            "doctype": "Kaapi Webhook Log",
+            "direction": "Incoming",
+            "received_at": frappe.utils.now_datetime(),
+            "assessment_id": assessment_id,
+            "callback_status": status,
+            "remote_ip": frappe.local.request_ip,
+            "content_type": req.content_type,
+            "query_params": json.dumps(query, indent=2),
+            "headers": json.dumps(headers, indent=2),
+            "raw_body": raw,
+        })
+        log.insert(ignore_permissions=True)
+        frappe.db.commit()
+        enqueue_raw_body_upload(log.name)
+        return log.name
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(f"Could not save Kaapi Webhook Log: {e}", "Kaapi Webhook Log Error")
+        return None
+
+
+def _update_log(log_name: Optional[str], processing_status: str, result: Dict = None,
+                error: str = None) -> None:
+    if not log_name:
+        return
+    try:
+        frappe.db.set_value("Kaapi Webhook Log", log_name, {
+            "processing_status": processing_status,
+            "http_status": frappe.local.response.get("http_status_code") or 200,
+            "authorized": 0 if processing_status == "Rejected" else 1,
+            "result": json.dumps(result, indent=2, default=str) if result is not None else None,
+            "error": error,
+        })
+        frappe.db.commit()
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(f"Could not update Kaapi Webhook Log {log_name}: {e}",
+                         "Kaapi Webhook Log Error")
+
+
 @frappe.whitelist(allow_guest=True)
 def receive():
     """Receive a Kaapi ASSESSMENT result batch and finish each submission."""
+    log_name = _log_request()
+
     if not _verify_secret():
         frappe.local.response["http_status_code"] = 401
-        return {"ok": False, "error": "unauthorized"}
+        result = {"ok": False, "error": "unauthorized"}
+        _update_log(log_name, "Rejected", result)
+        return result
 
     try:
         payload = _raw_body()
     except Exception as e:
         frappe.local.response["http_status_code"] = 400
-        return {"ok": False, "error": f"bad body: {e}"}
+        result = {"ok": False, "error": f"bad body: {e}"}
+        _update_log(log_name, "Error", result, error=str(e))
+        return result
 
-    result = process_payload(payload)
+    try:
+        result = process_payload(payload)
+    except Exception:
+        frappe.db.rollback()
+        frappe.local.response["http_status_code"] = 500
+        _update_log(log_name, "Error", error=frappe.get_traceback())
+        raise
+
     if not result.get("ok"):
         frappe.local.response["http_status_code"] = 400
+    _update_log(log_name, "Processed" if result.get("ok") else "Error", result,
+                error=None if result.get("ok") else result.get("error"))
     return result
 
 

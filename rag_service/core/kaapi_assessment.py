@@ -17,66 +17,38 @@ Why it's built this way (verified against the live API, see KAAPI_ASSESSMENT_SWI
   instructions + output schema; the rubric/description/level/language ride inside the
   `rendered_prompt` input, so a single config serves every assignment.
 
-Config/creds resolution (env first, LLM Settings fallback for the key):
-  KAAPI_API_KEY                 (else LLM Settings provider="Kaapi" api_secret)
-  KAAPI_BASE_URL                (default https://api.kaapi.ai)
-  KAAPI_CALLBACK_URL            (the public rag_service webhook URL)
-  KAAPI_IMAGE_CONFIG_ID / _VERSION
-  KAAPI_TEXT_CONFIG_ID  / _VERSION
+Configuration and encrypted credentials come from the site's Kaapi Settings singleton.
+No environment variables or LLM Settings record are required for assessments.
 """
-import os
+import json
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import frappe
 import requests
 
-DEFAULT_BASE_URL = "https://api.kaapi.ai"
+from ..rag_service.doctype.kaapi_settings.kaapi_settings import DEFAULT_BASE_URL, get_kaapi_settings
+from .kaapi_log_archive import enqueue_raw_body_upload
+
 API_PREFIX = "/api/v1"
-
-
-def _kaapi_api_key() -> str:
-    """Env first, then the active Kaapi LLM Settings row (api_secret/api_key)."""
-    env = os.environ.get("KAAPI_API_KEY", "").strip()
-    if env:
-        return env
-    try:
-        rows = frappe.get_list(
-            "LLM Settings", filters={"is_active": 1, "provider": "Kaapi"}, limit=1
-        )
-        if rows:
-            settings = frappe.get_doc("LLM Settings", rows[0].name)
-            for field in ("api_secret", "api_key"):
-                try:
-                    value = settings.get_password(field)
-                except Exception:
-                    value = None
-                if value:
-                    return str(value).strip()
-    except Exception:
-        pass
-    return ""
 
 
 class KaapiAssessmentClient:
     TIMEOUT_SECONDS = 60
 
     def __init__(self):
-        self.api_key = _kaapi_api_key()
+        self.settings = get_kaapi_settings()
+        self.api_key = self.settings.get_secret("api_key")
         if not self.api_key:
-            raise ValueError("Kaapi API key not configured (KAAPI_API_KEY or LLM Settings)")
-        self.base_url = self._normalize_base(
-            os.environ.get("KAAPI_BASE_URL", DEFAULT_BASE_URL)
-        )
-        self.callback_url = os.environ.get("KAAPI_CALLBACK_URL", "").strip()
+            raise ValueError("Set API Key in Kaapi Settings.")
+        self.base_url = self._normalize_base(self.settings.base_url or DEFAULT_BASE_URL)
+        self.callback_url = self.settings.get_callback_url()
 
     # ---- config lookup ----
     def _config_for(self, media_type: str) -> Tuple[Optional[str], int]:
-        prefix = "KAAPI_TEXT_CONFIG" if media_type == "text" else "KAAPI_IMAGE_CONFIG"
-        config_id = os.environ.get(f"{prefix}_ID", "").strip() or None
-        try:
-            version = int(os.environ.get(f"{prefix}_VERSION", "1"))
-        except ValueError:
-            version = 1
+        kind = "text" if media_type == "text" else "image"
+        config_id = (self.settings.get(f"{kind}_config_id") or "").strip() or None
+        version = int(self.settings.get(f"{kind}_config_version") or 1)
         return config_id, version
 
     # ---- http ----
@@ -114,13 +86,85 @@ class KaapiAssessmentClient:
             raise Exception(f"Kaapi POST {path} -> {r.status_code}: {r.text[:400]}")
         return self._unwrap(r.json())
 
+    def _log_submission(self, body: Dict) -> str:
+        """Persist the whole batch before sending it, with the callback token redacted."""
+        callback = urlsplit(body["callback_url"])
+        query = [(key, "***" if key == "token" else value)
+                 for key, value in parse_qsl(callback.query, keep_blank_values=True)]
+        logged_body = {
+            **body,
+            "callback_url": urlunsplit(callback._replace(query=urlencode(query))),
+        }
+        log = frappe.get_doc({
+            "doctype": "Kaapi Webhook Log",
+            "direction": "Outgoing",
+            "received_at": frappe.utils.now_datetime(),
+            "processing_status": "Submitting",
+            "request_url": f"{self.base_url}{API_PREFIX}/assessments",
+            "content_type": "application/json",
+            "raw_body": json.dumps(logged_body, indent=2, ensure_ascii=False),
+        })
+        log.insert(ignore_permissions=True)
+        # Keep the payload even if the HTTP request fails or subsequent work rolls back.
+        frappe.db.commit()
+        enqueue_raw_body_upload(log.name)
+        return log.name
+
+    @staticmethod
+    def _update_submission_log(log_name: str, status: str, result: Dict = None,
+                               error: str = None) -> None:
+        try:
+            frappe.db.set_value("Kaapi Webhook Log", log_name, {
+                "processing_status": status,
+                "assessment_id": (result or {}).get("assessment_id"),
+                "result": json.dumps(result, indent=2, ensure_ascii=False) if result is not None else None,
+                "error": error,
+            })
+            frappe.db.commit()
+        except Exception as e:
+            # A logging failure must not make an accepted batch look like a failed submit.
+            frappe.db.rollback()
+            frappe.log_error(f"Could not update Kaapi Webhook Log {log_name}: {e}",
+                             "Kaapi Webhook Log Error")
+
+    @staticmethod
+    def _normalize_image_url(image_url: Optional[str]) -> str:
+        """Return a GCS URI or reject an image that Kaapi cannot read through GCS."""
+        error = "Kaapi image URL must be gs://bucket/object or a supported GCS HTTP(S) URL."
+        if not isinstance(image_url, str) or not image_url.strip():
+            raise ValueError(error)
+        parsed = urlsplit(image_url.strip())
+        if parsed.username is not None or parsed.password is not None or parsed.port is not None:
+            raise ValueError(error)
+
+        host = parsed.hostname or ""
+        if parsed.scheme == "gs":
+            if parsed.query or parsed.fragment:
+                raise ValueError(error)
+            bucket, object_name = parsed.netloc, parsed.path.removeprefix("/")
+        elif parsed.scheme not in ("http", "https"):
+            raise ValueError(error)
+        elif host in ("storage.googleapis.com", "storage.cloud.google.com"):
+            bucket, _, object_name = parsed.path.removeprefix("/").partition("/")
+        elif host.endswith(".storage.googleapis.com"):
+            bucket = host.removesuffix(".storage.googleapis.com")
+            object_name = parsed.path.removeprefix("/")
+        else:
+            raise ValueError(error)
+
+        if not bucket or not object_name or any(char.isspace() for char in bucket):
+            raise ValueError(error)
+        # Preserve path escaping; HTTPS signatures/query parameters are not object names.
+        return f"gs://{bucket}/{object_name}"
+
     # ---- public ----
-    def build_row(self, submission_id: str, rendered_prompt: str,
+    @classmethod
+    def build_row(cls, submission_id: str, rendered_prompt: str,
                   media_type: str, image_url: Optional[str] = None) -> Dict:
         """One `input.data` row shaped to the config's input_schema."""
         row = {"submission_id": submission_id, "rendered_prompt": rendered_prompt}
         if media_type != "text":
-            row["artwork_image"] = image_url
+            row["artwork_image"] = cls._normalize_image_url(image_url)
         return row
 
     def submit(self, rows: List[Dict], media_type: str,
@@ -136,10 +180,15 @@ class KaapiAssessmentClient:
         if not config_id:
             raise ValueError(
                 f"No Kaapi config configured for media_type={media_type} "
-                f"(set KAAPI_{'TEXT' if media_type == 'text' else 'IMAGE'}_CONFIG_ID)"
+                f"(set {'Text' if media_type == 'text' else 'Image'} Config ID in Kaapi Settings)"
             )
-        if not self.callback_url:
-            raise ValueError("KAAPI_CALLBACK_URL is not set — assessments are webhook-only")
+
+        if media_type != "text":
+            # Normalize at the send boundary, including callers that construct rows directly.
+            rows = [
+                {**row, "artwork_image": self._normalize_image_url(row.get("artwork_image"))}
+                for row in rows
+            ]
 
         body = {
             "config": {"id": config_id, "version": version},
@@ -147,8 +196,14 @@ class KaapiAssessmentClient:
             "callback_url": self.callback_url,
             "request_metadata": request_metadata or {},
         }
-        data = self._post("/assessments", body)
-        assessment_id = data.get("assessment_id")
-        if not assessment_id:
-            raise Exception(f"Kaapi /assessments returned no assessment_id: {data}")
+        log_name = self._log_submission(body)
+        try:
+            data = self._post("/assessments", body)
+            assessment_id = data.get("assessment_id")
+            if not assessment_id:
+                raise Exception(f"Kaapi /assessments returned no assessment_id: {data}")
+        except Exception as e:
+            self._update_submission_log(log_name, "Error", error=str(e))
+            raise
+        self._update_submission_log(log_name, "Submitted", result=data)
         return assessment_id

@@ -1,0 +1,188 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-29 00:00:00.000000",
+ "description": "Outgoing Kaapi assessment payloads and incoming webhook requests (authentication secrets redacted).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "direction",
+  "received_at",
+  "assessment_id",
+  "callback_status",
+  "column_break_1",
+  "processing_status",
+  "authorized",
+  "http_status",
+  "result_section",
+  "result",
+  "error",
+  "request_section",
+  "request_url",
+  "remote_ip",
+  "content_type",
+  "query_params",
+  "headers",
+  "raw_body_gcs_url",
+  "raw_body"
+ ],
+ "fields": [
+  {
+   "default": "Incoming",
+   "fieldname": "direction",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Direction",
+   "options": "Incoming\nOutgoing",
+   "read_only": 1
+  },
+  {
+   "fieldname": "received_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Logged At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "assessment_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Assessment ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "depends_on": "eval:doc.direction != 'Outgoing'",
+   "description": "Batch status reported by Kaapi in the callback body.",
+   "fieldname": "callback_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Callback Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Received",
+   "fieldname": "processing_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Processing Status",
+   "options": "Received\nProcessed\nRejected\nError\nSubmitting\nSubmitted",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.direction != 'Outgoing'",
+   "fieldname": "authorized",
+   "fieldtype": "Check",
+   "label": "Authorized",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.direction != 'Outgoing'",
+   "description": "HTTP status code returned to Kaapi.",
+   "fieldname": "http_status",
+   "fieldtype": "Int",
+   "label": "HTTP Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "result_section",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "description": "Kaapi submission response data, or the response returned by the webhook.",
+   "fieldname": "result",
+   "fieldtype": "Code",
+   "label": "Result",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Code",
+   "label": "Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_section",
+   "fieldtype": "Section Break",
+   "label": "Request"
+  },
+  {
+   "depends_on": "eval:doc.direction == 'Outgoing'",
+   "fieldname": "request_url",
+   "fieldtype": "Small Text",
+   "label": "Request URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remote_ip",
+   "fieldtype": "Data",
+   "label": "Remote IP",
+   "read_only": 1
+  },
+  {
+   "fieldname": "content_type",
+   "fieldtype": "Data",
+   "label": "Content Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "query_params",
+   "fieldtype": "Code",
+   "label": "Query Params",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "headers",
+   "fieldtype": "Code",
+   "label": "Headers",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "description": "Copy of Raw Body uploaded to GCS as a text file.",
+   "fieldname": "raw_body_gcs_url",
+   "fieldtype": "Data",
+   "label": "Raw Body GCS URL",
+   "read_only": 1
+  },
+  {
+   "description": "Complete outgoing assessment JSON (all rows and rendered prompts; callback token redacted), or the incoming webhook body.",
+   "fieldname": "raw_body",
+   "fieldtype": "Code",
+   "label": "Raw Body",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-09-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rag Service",
+ "name": "Kaapi Webhook Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "assessment_id"
+}

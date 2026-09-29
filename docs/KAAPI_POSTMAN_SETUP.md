@@ -211,7 +211,7 @@ Strict-mode rules OpenAI enforces (violate → the whole batch fails **silently*
 |---|---|
 | Base URL | `https://api.kaapi.ai` |
 | GCS credential name | `tap-gcs-readonly` (google-gcp, bucket `assignment_submission_tap`) |
-| Image config | `tap-image-grader-prod` = `67865d5f-bc53-4708-9858-eb766132c0db` (v1) |
-| Text config | `tap-text-grader-prod` = `ec7cb5ec-6403-4c8c-98e9-ed6c963d506f` (v1) |
+| Image config | `tap-image-grader-prod` = `67865d5f-bc53-4708-9858-eb766132c0db` (v3) |
+| Text config | `tap-text-grader-prod` = `ec7cb5ec-6403-4c8c-98e9-ed6c963d506f` (v2) |
 | Config bodies | `Desktop/RRM/kaapi_config_{image,text}_prod.json` |
 | Early test config | `tap-art-grader-test` = `0a763d98-…` (v3 has the submission_id echo) |
