@@ -38,212 +38,92 @@
   "kaapi_assessment_id",
   "kaapi_batch_index",
   "kaapi_status",
-  "kaapi_context"
+  "kaapi_context",
+  "audio_section",
+  "audio_status",
+  "audio_feedback_url",
+  "audio_content_hash",
+  "audio_source_text",
+  "audio_text_fingerprint",
+  "audio_run",
+  "audio_error",
+  "audio_queued_at",
+  "audio_completed_at",
+  "sent_to_lms_at"
  ],
  "fields": [
-  {
-   "fieldname": "student_id",
-   "fieldtype": "Data",
-   "label": "Student ID"
-  },
-  {
-   "fieldname": "assignment_id",
-   "fieldtype": "Data",
-   "label": "Assignment ID"
-  },
-  {
-   "fieldname": "submission_id",
-   "fieldtype": "Data",
-   "label": "Submission ID"
-  },
-  {
-   "fieldname": "submission_type",
-   "fieldtype": "Select",
-   "label": "Submission Type",
-   "options": "\nimage\nvideo\naudio\ntext\nemoji"
-  },
-  {
-   "fieldname": "submission_url",
-   "fieldtype": "Data",
-   "label": "Submission URL"
-  },
-  {
-   "fieldname": "submission_text",
-   "fieldtype": "Small Text",
-   "label": "Submission Text"
-  },
-  {
-   "fieldname": "submission_content",
-   "fieldtype": "Text",
-   "label": "Submission Content"
-  },
-  {
-   "fieldname": "plagiarism_score",
-   "fieldtype": "Float",
-   "label": "Plagiarism Score"
-  },
-  {
-   "fieldname": "similar_sources",
-   "fieldtype": "Text",
-   "label": "Similar Sources"
-  },
-  {
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "label": "Status",
-   "options": "Pending\nProcessing\nCompleted\nFailed"
-  },
-  {
-   "fieldname": "generated_feedback",
-   "fieldtype": "Text",
-   "label": "Generated Feedback"
-  },
-  {
-   "fieldname": "feedback_summary",
-   "fieldtype": "Text",
-   "label": "Feedback Summary"
-  },
-  {
-   "fieldname": "created_at",
-   "fieldtype": "Datetime",
-   "label": "Created At"
-  },
-  {
-   "fieldname": "completed_at",
-   "fieldtype": "Datetime",
-   "label": "Completed At"
-  },
-  {
-   "fieldname": "template_used",
-   "fieldtype": "Text",
-   "label": "Template Used"
-  },
-  {
-   "fieldname": "model_used",
-   "fieldtype": "Text",
-   "label": "Model Used"
-  },
-  {
-   "fieldname": "processing_attempts",
-   "fieldtype": "Int",
-   "label": "Processing Attempts"
-  },
-  {
-   "fieldname": "error_log",
-   "fieldtype": "Text",
-   "label": "Error Log"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_archived",
-   "fieldtype": "Check",
-   "label": "Is Archived"
-  },
-  {
-   "fieldname": "result_status",
-   "fieldtype": "Select",
-   "label": "Result Status",
-   "options": "Pending\nSuccess - Original\nSuccess - Flagged\nFailed",
-   "default": "Pending",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "description": "Overall feedback generation result status"
-  },
-  {
-   "fieldname": "is_plagiarized",
-   "fieldtype": "Check",
-   "label": "Is Plagiarized"
-  },
-  {
-   "fieldname": "match_type",
-   "fieldtype": "Select",
-   "label": "Match Type",
-   "options": "\noriginal\nexact_duplicate\nnear_duplicate\nsemantic_match\nai_generated\nresubmission_allowed"
-  },
-  {
-   "fieldname": "plagiarism_source",
-   "fieldtype": "Select",
-   "label": "Plagiarism Source",
-   "options": "\nnone\npeer\npeer_collusion\nself_cross_assignment\nself_late_resubmission\nreference\nai_generated"
-  },
-  {
-   "fieldname": "is_ai_generated",
-   "fieldtype": "Check",
-   "label": "Is AI Generated"
-  },
-  {
-   "fieldname": "ai_detection_source",
-   "fieldtype": "Data",
-   "label": "AI Detection Source"
-  },
-  {
-   "fieldname": "ai_confidence",
-   "fieldtype": "Float",
-   "label": "AI Confidence"
-  },
-  {
-   "fieldname": "grade",
-   "fieldtype": "Data",
-   "label": "Grade"
-  },
-  {
-   "fieldname": "level",
-   "fieldtype": "Data",
-   "label": "Level"
-  },
-  {
-   "fieldname": "language",
-   "fieldtype": "Data",
-   "label": "Language"
-  },
-  {
-   "fieldname": "kaapi_assessment_id",
-   "fieldtype": "Data",
-   "label": "Kaapi Assessment ID",
-   "description": "Batch id returned by Kaapi /assessments; used to correlate the webhook result"
-  },
-  {
-   "fieldname": "kaapi_batch_index",
-   "fieldtype": "Int",
-   "label": "Kaapi Batch Index",
-   "default": "-1",
-   "description": "This row's 0-based position in the submitted Kaapi batch (primary correlation key: items[i] <-> this row)"
-  },
-  {
-   "fieldname": "kaapi_status",
-   "fieldtype": "Select",
-   "label": "Kaapi Status",
-   "options": "\nSubmitted\nCompleted\nFailed",
-   "description": "Lifecycle of the Kaapi ASSESSMENT submission for this row"
-  },
-  {
-   "fieldname": "kaapi_context",
-   "fieldtype": "Long Text",
-   "label": "Kaapi Context",
-   "description": "JSON captured at submit time (expected_format, model_used, template_used) so the webhook can finalize feedback without re-deriving it"
-  }
+  {"fieldname": "student_id", "fieldtype": "Data", "label": "Student ID"},
+  {"fieldname": "assignment_id", "fieldtype": "Data", "label": "Assignment ID"},
+  {"fieldname": "submission_id", "fieldtype": "Data", "label": "Submission ID"},
+  {"fieldname": "submission_type", "fieldtype": "Select", "label": "Submission Type",
+   "options": "\nimage\nvideo\naudio\ntext\nemoji"},
+  {"fieldname": "submission_url", "fieldtype": "Data", "label": "Submission URL"},
+  {"fieldname": "submission_text", "fieldtype": "Small Text", "label": "Submission Text"},
+  {"fieldname": "submission_content", "fieldtype": "Text", "label": "Submission Content"},
+  {"fieldname": "plagiarism_score", "fieldtype": "Float", "label": "Plagiarism Score"},
+  {"fieldname": "similar_sources", "fieldtype": "Text", "label": "Similar Sources"},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status",
+   "options": "Pending\nProcessing\nCompleted\nFailed"},
+  {"fieldname": "generated_feedback", "fieldtype": "Text", "label": "Generated Feedback"},
+  {"fieldname": "feedback_summary", "fieldtype": "Text", "label": "Feedback Summary"},
+  {"fieldname": "created_at", "fieldtype": "Datetime", "label": "Created At"},
+  {"fieldname": "completed_at", "fieldtype": "Datetime", "label": "Completed At"},
+  {"fieldname": "template_used", "fieldtype": "Text", "label": "Template Used"},
+  {"fieldname": "model_used", "fieldtype": "Text", "label": "Model Used"},
+  {"fieldname": "processing_attempts", "fieldtype": "Int", "label": "Processing Attempts"},
+  {"fieldname": "error_log", "fieldtype": "Text", "label": "Error Log"},
+  {"default": "0", "fieldname": "is_archived", "fieldtype": "Check", "label": "Is Archived"},
+  {"fieldname": "result_status", "fieldtype": "Select", "label": "Result Status",
+   "options": "Pending\nSuccess - Original\nSuccess - Flagged\nFailed", "default": "Pending",
+   "in_list_view": 1, "in_standard_filter": 1,
+   "description": "Overall feedback generation result status"},
+  {"fieldname": "is_plagiarized", "fieldtype": "Check", "label": "Is Plagiarized"},
+  {"fieldname": "match_type", "fieldtype": "Select", "label": "Match Type",
+   "options": "\noriginal\nexact_duplicate\nnear_duplicate\nsemantic_match\nai_generated\nresubmission_allowed"},
+  {"fieldname": "plagiarism_source", "fieldtype": "Select", "label": "Plagiarism Source",
+   "options": "\nnone\npeer\npeer_collusion\nself_cross_assignment\nself_late_resubmission\nreference\nai_generated"},
+  {"fieldname": "is_ai_generated", "fieldtype": "Check", "label": "Is AI Generated"},
+  {"fieldname": "ai_detection_source", "fieldtype": "Data", "label": "AI Detection Source"},
+  {"fieldname": "ai_confidence", "fieldtype": "Float", "label": "AI Confidence"},
+  {"fieldname": "grade", "fieldtype": "Data", "label": "Grade"},
+  {"fieldname": "level", "fieldtype": "Data", "label": "Level"},
+  {"fieldname": "language", "fieldtype": "Data", "label": "Language"},
+  {"fieldname": "kaapi_assessment_id", "fieldtype": "Data", "label": "Kaapi Assessment ID",
+   "description": "Batch id returned by Kaapi /assessments; used to correlate the webhook result"},
+  {"fieldname": "kaapi_batch_index", "fieldtype": "Int", "label": "Kaapi Batch Index", "default": "-1",
+   "description": "This row's 0-based position in the submitted Kaapi batch"},
+  {"fieldname": "kaapi_status", "fieldtype": "Select", "label": "Kaapi Status",
+   "options": "\nSubmitted\nCompleted\nFailed"},
+  {"fieldname": "kaapi_context", "fieldtype": "Long Text", "label": "Kaapi Context"},
+  {"fieldname": "audio_section", "fieldtype": "Section Break", "label": "Audio Feedback (TTS)"},
+  {"fieldname": "audio_status", "fieldtype": "Select", "label": "Audio Status",
+   "options": "\nNot Applicable\nQueued\nProcessing\nCompleted\nFailed",
+   "default": "", "in_list_view": 1, "in_standard_filter": 1,
+   "description": "Lifecycle of TTS generation. 'Not Applicable' = unsupported language or TTS disabled; row is sent to the LMS without audio, no waiting."},
+  {"fieldname": "audio_feedback_url", "fieldtype": "Data", "label": "Audio Feedback URL",
+   "description": "CDN URL of the generated speech clip. Set only by the TTS pod's verified, hash-matched callback."},
+  {"fieldname": "audio_content_hash", "fieldtype": "Data", "label": "Audio Content Hash",
+   "description": "sha256 content hash the pod reported and we verified against our own recomputation at write time."},
+  {"fieldname": "audio_source_text", "fieldtype": "Small Text", "label": "Audio Source Text"},
+  {"fieldname": "audio_text_fingerprint", "fieldtype": "Data", "label": "Audio Text Fingerprint"},
+  {"fieldname": "audio_run", "fieldtype": "Link", "options": "TTS Run", "label": "Audio Run"},
+  {"fieldname": "audio_error", "fieldtype": "Small Text", "label": "Audio Error"},
+  {"fieldname": "audio_queued_at", "fieldtype": "Datetime", "label": "Audio Queued At"},
+  {"fieldname": "audio_completed_at", "fieldtype": "Datetime", "label": "Audio Completed At"},
+  {"fieldname": "sent_to_lms_at", "fieldtype": "Datetime", "label": "Sent To LMS At",
+   "description": "Set once this row's message has actually been published to feedback_results_queue. Prevents double-sends."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-28 16:05:15.339783",
+ "modified": "2026-10-07 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "Feedback Request",
  "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
-  }
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1,
+   "role": "System Manager", "share": 1, "write": 1}
  ],
  "row_format": "Dynamic",
  "sort_field": "modified",

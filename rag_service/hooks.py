@@ -175,17 +175,19 @@ commands = [
 # It enqueues the actual run on the "long" queue (big timeout), so a large batch is not
 # limited by the default job timeout. Adjust the cron time as needed.
 scheduler_events = {
-	"cron": {
-		# "0 1 * * *": [
-		# 	"rag_service.core.batch_runner.enqueue_nightly_batch"
-		# ]
-        # Run every 30 mins
-        "*/30 * * * *   ": [
-			"rag_service.core.batch_runner.enqueue_nightly_batch"
-		]
-        
+    "cron": {
+        "*/30 * * * *": [
+            "rag_service.core.batch_runner.enqueue_nightly_batch"
+        ],
+        "*/10 * * * *": [
+            "rag_service.tts.lib.scheduler_tick.run_if_due"
+        ],
+        "*/5 * * * *": [
+            "rag_service.tts.job.reaper.run_reaper_now"
+        ]
 	}
 }
+
 
 # Testing
 # -------
@@ -262,4 +264,3 @@ scheduler_events = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
