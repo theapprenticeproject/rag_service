@@ -1,10 +1,9 @@
 import frappe
 
 from ..constants import (
-    ACTIVE_STATUSES, DECISION_DEPLOY, DECISION_SKIP_BLOCKED, DECISION_SKIP_BUDGET,
-    DECISION_SKIP_DISABLED, DECISION_SKIP_NOTHING, DECISION_SKIP_BELOW_MINIMUM,
-    RUN_DOCTYPE, STATUS_DEPLOYING, STATUS_DEPLOY_FAILED, STATUS_SKIPPED, STATUS_STARTING,
-    TERMINATION_MANUAL_ACTION_NEEDED, TERMINATION_PENDING,
+    DECISION_DEPLOY, DECISION_SKIP_BELOW_MINIMUM, DECISION_SKIP_BLOCKED, DECISION_SKIP_BUDGET,
+    DECISION_SKIP_DISABLED, DECISION_SKIP_NOTHING, RUN_DOCTYPE, STATUS_DEPLOYING, STATUS_DEPLOY_FAILED,
+    STATUS_STARTING,
 )
 from ..lib import budget as budget_lib
 from ..lib import runlog, runstate
@@ -13,221 +12,238 @@ from ..lib import tokens
 from ..lib.eligibility import find_eligible
 from ..lib.runpod import RunPodClient, RunPodError, build_create_payload, is_capacity_error
 
-LOCK_KEY = "tts:deploy:mutex"
-LOCK_TTL_SECONDS = 300
-WAITING_FOR_CAPACITY = "waiting_for_capacity"
+can_transition = runstate.can_transition
+is_terminal = runstate.is_terminal
+set_fields = runstate.set_fields
+increment = runstate.increment
+transition = runstate.transition
+get_for_update = runstate.get_for_update
+conditional_write_url = runstate.conditional_write_url
+mark_failed = runstate.mark_failed
 
 
-def _acquire_mutex():
-    return bool(frappe.cache().set(LOCK_KEY, "1", nx=True, ex=LOCK_TTL_SECONDS))
+def _client(settings):
+    return RunPodClient(settings.runpod_api_base, settings.get_secret("runpod_api_key"), settings.http_timeout_seconds)
 
 
-def _release_mutex():
-    frappe.cache().delete(LOCK_KEY)
+def _has_active_run():
+    from ..constants import ACTIVE_STATUSES
+    return bool(frappe.db.exists(RUN_DOCTYPE, {"status": ["in", list(ACTIVE_STATUSES)]}))
 
 
-def _blocker(settings):
-    if not settings.kill_switch_on():
-        return DECISION_SKIP_DISABLED, "TTS Settings.enabled is off"
-    if not (settings.image_name or "").strip() or not (settings.model_revision or "").strip():
-        return DECISION_SKIP_BLOCKED, "image_name or model_revision is empty"
-    missing = [f for f in ("runpod_api_key", "tts_pod_shared_secret", "tts_gcs_service_account_json_b64")
-               if not settings.get_secret(f)]
-    if missing:
-        return DECISION_SKIP_BLOCKED, "missing secrets: " + ",".join(missing)
-    if frappe.db.exists(RUN_DOCTYPE, {"status": ["in", list(ACTIVE_STATUSES)]}):
-        return DECISION_SKIP_BLOCKED, "another run is active"
-    if frappe.db.exists(
-        RUN_DOCTYPE,
-        {"termination_status": ["in", [TERMINATION_PENDING, TERMINATION_MANUAL_ACTION_NEEDED]]},
-    ):
-        return DECISION_SKIP_BLOCKED, "a pod termination is unverified"
-    return None
-
-
-def _new_run(settings, trigger_type, triggered_by, status, extra):
-    doc = frappe.get_doc({
-        "doctype": RUN_DOCTYPE,
-        "status": status,
-        "trigger_type": trigger_type,
-        "triggered_by": triggered_by or frappe.session.user,
-        "created_at": frappe.utils.now_datetime(),
-        "termination_status": "Not Needed",
-        **extra,
-    })
+def _create_run_row(trigger_type, triggered_by, decision, eligible_found):
+    doc = frappe.new_doc(RUN_DOCTYPE)
+    doc.flags["_tts_internal_write"] = True
+    doc.status = "Draft"
+    doc.status_reason = ""
+    doc.trigger_type = trigger_type
+    doc.triggered_by = triggered_by
+    doc.created_at = frappe.utils.now_datetime()
+    doc.decision = decision
+    doc.eligible_found = eligible_found
     doc.insert(ignore_permissions=True)
-    return doc
+    frappe.db.commit()
+    return doc.name
 
 
-def _env(settings, run_name, count):
-    shared = settings.get_secret("tts_pod_shared_secret")
+def _reserve_items(run_name, names):
+    if not names:
+        return 0
+    placeholders = ", ".join(["%s"] * len(names))
+    frappe.db.sql(
+        f"""
+        UPDATE `tabFeedback Request`
+        SET audio_status = 'Processing', audio_run = %s
+        WHERE name IN ({placeholders}) AND audio_status = 'Queued'
+        """,
+        [run_name] + list(names),
+    )
+    cursor = frappe.db._cursor
+    return getattr(cursor, "rowcount", 0)
+
+
+def _release_items(names):
+    if not names:
+        return
+    placeholders = ", ".join(["%s"] * len(names))
+    frappe.db.sql(
+        f"""
+        UPDATE `tabFeedback Request`
+        SET audio_status = 'Queued', audio_run = NULL
+        WHERE name IN ({placeholders}) AND audio_status = 'Processing'
+        """,
+        list(names),
+    )
+
+
+def deploy_new(trigger_type="Manual", triggered_by="System", force=False):
+    settings = settings_lib.load_fresh()
+
+    if not settings.kill_switch_on():
+        return {"deployed": False, "reason": DECISION_SKIP_DISABLED}
+
+    if _has_active_run():
+        return {"deployed": False, "reason": DECISION_SKIP_BLOCKED}
+
+    found = find_eligible(settings, max_scan=settings.max_clips_per_run * 3)
+    if not found.items:
+        _create_run_row(trigger_type, triggered_by, DECISION_SKIP_NOTHING, 0)
+        return {"deployed": False, "reason": DECISION_SKIP_NOTHING}
+
+    allow_small = force and bool(settings.allow_force_start)
+    if not allow_small and len(found.items) < settings.min_items_to_deploy:
+        _create_run_row(trigger_type, triggered_by, DECISION_SKIP_BELOW_MINIMUM, len(found.items))
+        return {"deployed": False, "reason": DECISION_SKIP_BELOW_MINIMUM, "eligible_found": len(found.items)}
+
+    check = budget_lib.fit_to_caps(settings, found.items)
+    if not check.fits or check.trimmed_count == 0:
+        _create_run_row(trigger_type, triggered_by, DECISION_SKIP_BUDGET, len(found.items))
+        return {"deployed": False, "reason": DECISION_SKIP_BUDGET, "eligible_found": len(found.items)}
+
+    selected = found.items[: check.trimmed_count]
+    run_name = _create_run_row(trigger_type, triggered_by, DECISION_DEPLOY, len(found.items))
+
+    reserved_names = [item.id for item in selected]
+    reserved_count = _reserve_items(run_name, reserved_names)
+    frappe.db.commit()
+
+    if reserved_count == 0:
+        runstate.set_fields(run_name, {"status": STATUS_DEPLOY_FAILED, "status_reason": "no_items_reserved"})
+        frappe.db.commit()
+        return {"deployed": False, "reason": "no_items_reserved", "run": run_name}
+
+    runstate.transition(run_name, "Draft", STATUS_DEPLOYING, {
+        "manifest_count": reserved_count,
+        "estimated_cost_usd": check.estimate.cost_usd,
+        "hourly_rate": settings.fallback_hourly_rate_usd,
+    })
+    frappe.db.commit()
+
     ttl_minutes = int(settings.pod_limit_max_seconds / 60) + int(settings.token_buffer_minutes)
-    return {
-        "SERVER_URL": settings.public_base_url,
-        "API_PATH_PREFIX": settings_lib.api_path_prefix(settings),
+    token = tokens.issue(run_name, settings.get_secret("tts_pod_shared_secret"), ttl_minutes)
+    prefix = settings_lib.api_path_prefix(settings)
+
+    env = {
         "RUN_ID": run_name,
-        "RUN_TOKEN": tokens.issue(run_name, shared, ttl_minutes),
+        "RUN_TOKEN": token,
+        "MANIFEST_URL": f"{settings.public_base_url}{prefix}manifest",
+        "PROGRESS_URL": f"{settings.public_base_url}{prefix}progress",
+        "BEAT_URL": f"{settings.public_base_url}{prefix}beat",
+        "COMPLETE_URL": f"{settings.public_base_url}{prefix}complete",
         "GCS_BUCKET": settings.gcs_bucket,
         "GCS_PREFIX": settings.gcs_prefix,
-        "CDN_BASE_URL": settings.cdn_base_url,
         "MODEL_REVISION": settings.model_revision,
         "GCS_SERVICE_ACCOUNT_JSON_B64": settings.get_secret("tts_gcs_service_account_json_b64"),
-        "RUNPOD_API_KEY": settings.get_secret("runpod_api_key"),
-        "POD_LIMIT_SECONDS": str(settings.pod_limit_max_seconds),
-        "MAX_ITEMS": str(count),
-        "MAX_TEXT_CHARS": str(settings.max_text_chars()),
+        "POD_LIMIT_MAX_SECONDS": str(settings.pod_limit_max_seconds),
+        "HEARTBEAT_INTERVAL_SECONDS": "30",
     }
+    payload = build_create_payload(settings, run_name, env)
 
-
-def _record_pod(run_name, pod):
-    runstate.set_fields(run_name, {
-        "pod_id": pod.get("id") or pod.get("podId"),
-        "pod_name": pod.get("name"),
-        "hourly_rate": pod.get("costPerHr") or 0,
-        "pod_created_at": frappe.utils.now_datetime(),
-        "next_capacity_retry_at": None,
-        "status": STATUS_STARTING,
-    })
-
-
-def _mark_deploy_failed(run_name, reason):
-    runstate.set_fields(run_name, {
-        "status": STATUS_DEPLOY_FAILED,
-        "status_reason": str(reason)[:140],
-        "next_capacity_retry_at": None,
-    })
-
-
-def _schedule_capacity_retry(settings, run_name, detail):
-    row = frappe.db.get_value(
-        RUN_DOCTYPE, run_name, ["capacity_wait_started_at", "capacity_retry_count"], as_dict=True
-    )
-    now = frappe.utils.now_datetime()
-    started = row.capacity_wait_started_at or now
-    attempts = (row.capacity_retry_count or 0) + 1
-    deadline = frappe.utils.add_to_date(started, minutes=60)
-    next_at = frappe.utils.add_to_date(now, minutes=3)
-    if next_at > deadline:
-        runlog.append(run_name, f"no capacity after {attempts} attempts, giving up")
-        _mark_deploy_failed(run_name, f"no_capacity_after_{attempts}_attempts")
-        frappe.db.commit()
-        return {"deployed": False, "reason": STATUS_DEPLOY_FAILED, "run": run_name}
-    runstate.set_fields(run_name, {
-        "capacity_wait_started_at": started,
-        "capacity_retry_count": attempts,
-        "next_capacity_retry_at": next_at,
-        "status_reason": f"{WAITING_FOR_CAPACITY} attempt {attempts}",
-    })
-    runlog.append(run_name, f"no capacity (attempt {attempts}), retry at {next_at}: {detail}")
-    frappe.db.commit()
-    return {"deployed": False, "reason": WAITING_FOR_CAPACITY, "run": run_name, "retry_at": str(next_at)}
-
-
-def _launch(settings, run_name, count):
     try:
-        client = RunPodClient(settings.runpod_api_base, settings.get_secret("runpod_api_key"),
-                               settings.http_timeout_seconds)
-        payload = build_create_payload(settings, run_name, _env(settings, run_name, count))
-        try:
-            pod = client.create_pod(payload)
-        except RunPodError as exc:
-            existing = None
-            try:
-                existing = client.find_by_name(run_name)
-            except RunPodError:
-                pass
-            if existing:
-                _record_pod(run_name, existing)
-                frappe.db.commit()
-                return {"deployed": True, "adopted": True, "run": run_name}
-            if is_capacity_error(exc):
-                return _schedule_capacity_retry(settings, run_name, str(exc))
-            _mark_deploy_failed(run_name, str(exc))
+        client = _client(settings)
+        pod = client.create_pod(payload)
+    except RunPodError as exc:
+        _release_items(reserved_names)
+        if is_capacity_error(exc) and settings.capacity_retry_enabled:
+            retry_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=settings.capacity_retry_minutes)
+            runstate.set_fields(run_name, {
+                "status": STATUS_DEPLOYING,
+                "status_reason": "waiting_for_capacity",
+                "capacity_wait_started_at": frappe.utils.now_datetime(),
+                "next_capacity_retry_at": retry_at,
+            })
             frappe.db.commit()
-            return {"deployed": False, "reason": STATUS_DEPLOY_FAILED, "run": run_name}
-        _record_pod(run_name, pod)
+            runlog.append(run_name, f"deploy: capacity unavailable, retry at {retry_at}")
+            return {"deployed": False, "reason": "waiting_for_capacity", "run": run_name}
+        runstate.transition(run_name, STATUS_DEPLOYING, STATUS_DEPLOY_FAILED, {"status_reason": str(exc)[:140]})
         frappe.db.commit()
-        return {"deployed": True, "run": run_name}
+        runlog.append(run_name, f"deploy: create_pod failed: {exc}")
+        return {"deployed": False, "reason": "deploy_failed", "run": run_name}
     except Exception as exc:
-        frappe.log_error(title="tts_launch_failed")
-        _mark_deploy_failed(run_name, f"{type(exc).__name__}: {exc}")
+        _release_items(reserved_names)
+        runstate.transition(run_name, STATUS_DEPLOYING, STATUS_DEPLOY_FAILED, {"status_reason": str(exc)[:140]})
         frappe.db.commit()
-        return {"deployed": False, "reason": STATUS_DEPLOY_FAILED, "run": run_name}
+        runlog.append(run_name, f"deploy: unexpected error: {exc}")
+        return {"deployed": False, "reason": "deploy_failed", "run": run_name}
+
+    pod_id = pod.get("id") or pod.get("podId")
+    hourly_rate = pod.get("costPerHr") or settings.fallback_hourly_rate_usd
+
+    runstate.transition(run_name, STATUS_DEPLOYING, STATUS_STARTING, {
+        "pod_id": pod_id,
+        "pod_name": run_name,
+        "hourly_rate": hourly_rate,
+        "pod_created_at": frappe.utils.now_datetime(),
+    })
+    frappe.db.commit()
+    runlog.append(run_name, f"deploy: pod {pod_id} created, {reserved_count} items reserved")
+
+    return {"deployed": True, "run": run_name, "pod_id": pod_id, "reserved_count": reserved_count}
 
 
 def retry_capacity(run_name):
-    if not _acquire_mutex():
-        return {"deployed": False, "reason": DECISION_SKIP_BLOCKED}
+    settings = settings_lib.load_fresh()
+    run = runstate.get_for_update(run_name)
+    if run is None or run.status != STATUS_DEPLOYING or run.pod_id:
+        return {"retried": False}
+
+    env_prefix = settings_lib.api_path_prefix(settings)
+    reserved_names = frappe.get_all(
+        "Feedback Request", filters={"audio_run": run_name, "audio_status": "Processing"}, pluck="name",
+    )
+    ttl_minutes = int(settings.pod_limit_max_seconds / 60) + int(settings.token_buffer_minutes)
+    token = tokens.issue(run_name, settings.get_secret("tts_pod_shared_secret"), ttl_minutes)
+    env = {
+        "RUN_ID": run_name,
+        "RUN_TOKEN": token,
+        "MANIFEST_URL": f"{settings.public_base_url}{env_prefix}manifest",
+        "PROGRESS_URL": f"{settings.public_base_url}{env_prefix}progress",
+        "BEAT_URL": f"{settings.public_base_url}{env_prefix}beat",
+        "COMPLETE_URL": f"{settings.public_base_url}{env_prefix}complete",
+        "GCS_BUCKET": settings.gcs_bucket,
+        "GCS_PREFIX": settings.gcs_prefix,
+        "MODEL_REVISION": settings.model_revision,
+        "GCS_SERVICE_ACCOUNT_JSON_B64": settings.get_secret("tts_gcs_service_account_json_b64"),
+        "POD_LIMIT_MAX_SECONDS": str(settings.pod_limit_max_seconds),
+        "HEARTBEAT_INTERVAL_SECONDS": "30",
+    }
+    payload = build_create_payload(settings, run_name, env)
+
     try:
-        settings = settings_lib.load_fresh()
-        row = frappe.db.get_value(RUN_DOCTYPE, run_name, ["status", "pod_id", "manifest_count"], as_dict=True)
-        if not row or row.status != STATUS_DEPLOYING or row.pod_id:
-            return {"deployed": False, "reason": "not_waiting"}
-        if not settings.kill_switch_on():
-            _mark_deploy_failed(run_name, "disabled_while_waiting_for_capacity")
+        client = _client(settings)
+        pod = client.create_pod(payload)
+    except RunPodError as exc:
+        if is_capacity_error(exc) and settings.capacity_retry_enabled:
+            retry_count = (run.capacity_retry_count or 0) + 1
+            retry_at = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=settings.capacity_retry_minutes)
+            runstate.set_fields(run_name, {
+                "capacity_retry_count": retry_count,
+                "next_capacity_retry_at": retry_at,
+            })
             frappe.db.commit()
-            return {"deployed": False, "reason": DECISION_SKIP_DISABLED, "run": run_name}
-        lease = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=3)
-        runstate.set_fields(run_name, {"next_capacity_retry_at": lease})
+            runlog.append(run_name, f"capacity retry {retry_count} failed, retry at {retry_at}")
+            return {"retried": True, "deployed": False}
+        _release_items(reserved_names)
+        runstate.set_fields(run_name, {"status": STATUS_DEPLOY_FAILED, "status_reason": str(exc)[:140]})
         frappe.db.commit()
-        return _launch(settings, run_name, row.manifest_count or 0)
-    finally:
-        _release_mutex()
-
-
-def deploy_new(trigger_type="Manual", triggered_by=None, force=False) -> dict:
-    if not _acquire_mutex():
-        return {"deployed": False, "reason": DECISION_SKIP_BLOCKED, "detail": "another deploy is in progress"}
-    try:
-        settings = settings_lib.load_fresh()
-
-        blocker = _blocker(settings)
-        if blocker:
-            decision, reason = blocker
-            run = _new_run(settings, trigger_type, triggered_by, STATUS_SKIPPED,
-                            {"decision": decision, "status_reason": reason})
-            frappe.db.commit()
-            return {"deployed": False, "reason": decision, "run": run.name}
-
-        found = find_eligible(settings, max_scan=settings.max_clips_per_run * 3)
-        if not found.items:
-            run = _new_run(settings, trigger_type, triggered_by, STATUS_SKIPPED,
-                            {"decision": DECISION_SKIP_NOTHING, "status_reason": "no Queued rows found",
-                             "eligible_found": 0})
-            frappe.db.commit()
-            return {"deployed": False, "reason": DECISION_SKIP_NOTHING, "run": run.name}
-
-        allow_bypass = force and settings.allow_force_start
-        if len(found.items) < settings.min_items_to_deploy and not allow_bypass:
-            run = _new_run(settings, trigger_type, triggered_by, STATUS_SKIPPED,
-                            {"decision": DECISION_SKIP_BELOW_MINIMUM,
-                             "status_reason": f"{len(found.items)} eligible, minimum is {settings.min_items_to_deploy}",
-                             "eligible_found": len(found.items)})
-            frappe.db.commit()
-            return {"deployed": False, "reason": DECISION_SKIP_BELOW_MINIMUM, "run": run.name}
-
-        check = budget_lib.fit_to_caps(settings, found.items)
-        if not check.fits:
-            run = _new_run(settings, trigger_type, triggered_by, STATUS_SKIPPED,
-                            {"decision": DECISION_SKIP_BUDGET, "status_reason": check.reason,
-                             "eligible_found": len(found.items), "estimated_cost_usd": check.estimate.cost_usd})
-            frappe.db.commit()
-            return {"deployed": False, "reason": DECISION_SKIP_BUDGET, "run": run.name}
-
-        items = found.items[: check.trimmed_count]
-        run = _new_run(settings, trigger_type, triggered_by, STATUS_DEPLOYING, {
-            "decision": DECISION_DEPLOY,
-            "eligible_found": len(found.items),
-            "manifest_count": len(items),
-            "estimated_cost_usd": check.estimate.cost_usd,
-        })
-
-        for item in items:
-            frappe.db.set_value("Feedback Request", item.id, {
-                "audio_status": "Processing", "audio_run": run.name,
-            }, update_modified=False)
+        runlog.append(run_name, f"capacity retry: deploy failed: {exc}")
+        return {"retried": True, "deployed": False}
+    except Exception as exc:
+        _release_items(reserved_names)
+        runstate.set_fields(run_name, {"status": STATUS_DEPLOY_FAILED, "status_reason": str(exc)[:140]})
         frappe.db.commit()
+        runlog.append(run_name, f"capacity retry: unexpected error: {exc}")
+        return {"retried": True, "deployed": False}
 
-        return _launch(settings, run.name, len(items))
-    finally:
-        _release_mutex()
+    pod_id = pod.get("id") or pod.get("podId")
+    hourly_rate = pod.get("costPerHr") or settings.fallback_hourly_rate_usd
+    ok = runstate.transition_if_status(run_name, STATUS_DEPLOYING, STATUS_STARTING, {
+        "pod_id": pod_id,
+        "pod_name": run_name,
+        "hourly_rate": hourly_rate,
+        "pod_created_at": frappe.utils.now_datetime(),
+    })
+    frappe.db.commit()
+    if ok:
+        runlog.append(run_name, f"capacity retry: pod {pod_id} created")
+    return {"retried": True, "deployed": ok, "pod_id": pod_id}

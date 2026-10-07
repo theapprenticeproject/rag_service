@@ -10,16 +10,16 @@ def content_hash(text, voice, emotion, fmt, model_revision):
     return hashlib.sha256(payload).hexdigest()
 
 
-def expected_hash(text, language, model_revision, fmt="ogg"):
+def expected_hash(text, language, model_revision, fmt):
     voice = voice_for(language)
     return content_hash(text, voice, None, fmt, model_revision)
 
 
-def object_key(prefix, language, digest, fmt="ogg"):
+def object_key(prefix, language, digest, fmt):
     return f"{prefix}/{language}/{digest[:32]}.{fmt}"
 
 
-def expected_url(text, language, model_revision, gcs_prefix, cdn_base_url, fmt="ogg"):
+def expected_url(text, language, model_revision, gcs_prefix, cdn_base_url, fmt):
     digest = expected_hash(text, language, model_revision, fmt)
     key = object_key(gcs_prefix, language, digest, fmt)
     return f"{cdn_base_url}/{key}"

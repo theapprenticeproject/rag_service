@@ -1,8 +1,18 @@
+import re
+
 import frappe
 from frappe.model.document import Document
 
 DEFAULT_BASE_URL = "https://api.kaapi.ai"
 DEFAULT_RUNPOD_API_BASE = "https://rest.runpod.io/v1"
+
+CRON_FIELD_RANGES = (
+    (0, 59),
+    (0, 23),
+    (1, 31),
+    (1, 12),
+    (0, 7),
+)
 
 
 def get_tts_settings():
@@ -11,6 +21,91 @@ def get_tts_settings():
 
 def tts_enabled() -> bool:
     return bool(get_tts_settings().enabled)
+
+
+def _validate_cron_field(field_text, lo, hi):
+    if field_text == "*":
+        return True
+    for part in field_text.split(","):
+        part = part.strip()
+        if not part:
+            return False
+        step = 1
+        if "/" in part:
+            part, step_text = part.split("/", 1)
+            if not step_text.isdigit() or int(step_text) <= 0:
+                return False
+            step = int(step_text)
+        if part == "*":
+            continue
+        if "-" in part:
+            bounds = part.split("-")
+            if len(bounds) != 2 or not all(b.isdigit() for b in bounds):
+                return False
+            start, end = int(bounds[0]), int(bounds[1])
+            if start < lo or end > hi or start > end:
+                return False
+        else:
+            if not part.isdigit():
+                return False
+            value = int(part)
+            if value < lo or value > hi:
+                return False
+    return True
+
+
+def validate_cron_expression(expression):
+    fields = expression.strip().split()
+    if len(fields) != 5:
+        return False
+    return all(
+        _validate_cron_field(field, lo, hi)
+        for field, (lo, hi) in zip(fields, CRON_FIELD_RANGES)
+    )
+
+
+def _field_matches(field_text, value, lo, hi):
+    if field_text == "*":
+        return True
+    for part in field_text.split(","):
+        part = part.strip()
+        step = 1
+        if "/" in part:
+            part, step_text = part.split("/", 1)
+            step = int(step_text)
+        if part == "*":
+            start, end = lo, hi
+        elif "-" in part:
+            bounds = part.split("-")
+            start, end = int(bounds[0]), int(bounds[1])
+        else:
+            start = end = int(part)
+        if start <= value <= end and (value - start) % step == 0:
+            return True
+    return False
+
+
+def _dow_matches(field_text, weekday):
+    if _field_matches(field_text, weekday, 0, 7):
+        return True
+    if weekday == 0 and _field_matches(field_text, 7, 0, 7):
+        return True
+    return False
+
+
+def cron_matches_now(expression, now):
+    fields = expression.strip().split()
+    if len(fields) != 5:
+        return False
+    minute, hour, dom, month, dow = fields
+    weekday = now.isoweekday() % 7
+    return (
+        _field_matches(minute, now.minute, 0, 59)
+        and _field_matches(hour, now.hour, 0, 23)
+        and _field_matches(dom, now.day, 1, 31)
+        and _field_matches(month, now.month, 1, 12)
+        and _dow_matches(dow, weekday)
+    )
 
 
 class TTSSettings(Document):
@@ -37,6 +132,8 @@ class TTSSettings(Document):
             frappe.throw("Max Consecutive Bad Runs must be at least 1.")
         if not (0 <= (self.bad_run_success_floor_percent or 0) <= 100):
             frappe.throw("Bad Run Success Floor Percent must be between 0 and 100.")
+
+        self._validate_scheduling()
 
         name = (self.image_name or "").strip().lower()
         if name and "@sha256:" not in name:
@@ -65,6 +162,37 @@ class TTSSettings(Document):
                 frappe.throw("Model Revision is required to enable TTS batches.")
             if not (self.alert_email or "").strip():
                 frappe.throw("Alert Email is required to enable TTS batches.")
+
+    def _validate_scheduling(self):
+        if not self.scheduling_enabled:
+            return
+
+        self.schedule_mode = self.schedule_mode or "Interval"
+
+        if self.schedule_mode == "Interval":
+            if (self.schedule_interval_minutes or 0) < 5:
+                frappe.throw("Schedule Interval Minutes must be at least 5.")
+        elif self.schedule_mode == "Cron":
+            lines = [
+                line.strip()
+                for line in (self.schedule_cron_expressions or "").splitlines()
+                if line.strip()
+            ]
+            if not lines:
+                frappe.throw("Enter at least one cron expression, one per line.")
+            if len(lines) > 20:
+                frappe.throw("No more than 20 cron expressions are supported.")
+            bad = [line for line in lines if not validate_cron_expression(line)]
+            if bad:
+                frappe.throw(
+                    "Invalid cron expression(s): " + "; ".join(bad)
+                    + ". Use standard 5-field cron syntax, e.g. '0 2 * * *'."
+                )
+        else:
+            frappe.throw("Schedule Mode must be Interval or Cron.")
+
+        if (self.capacity_retry_minutes or 0) < 2:
+            frappe.throw("Capacity Retry Interval Minutes must be at least 2.")
 
     def get_secret(self, fieldname):
         if not self.get(fieldname):

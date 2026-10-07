@@ -13,10 +13,15 @@ from ..constants import (
     STATUS_COMPLETED_WITH_FAILURES, STATUS_FAILED, STATUS_RUNNING, STATUS_STARTING,
     STATUS_STOPPING, STATUS_TIMED_OUT,
 )
-from ..lib import contract, languages, runlog, runstate
+from ..lib import contract, runlog, runstate
 from ..lib.guard import GuardStop, enter
+from ..lib.release import release_stuck_rows
 from ..lib.settings import load as load_settings
 from ..lib.text import prepare_item
+
+KNOWN_COMPLETE_REASONS = frozenset({
+    "completed", "empty", "completed_with_failures", "stopped", "timeout", "startup_timeout",
+})
 
 
 def _respond_stop(exc):
@@ -63,11 +68,31 @@ def manifest():
         frappe.local.response.http_status_code = 409
         return {"error": "wrong_phase"}
 
-    fields = {}
+    if run.manifest_served:
+        rows = frappe.get_all(
+            "Feedback Request",
+            filters={"audio_run": run.name, "audio_status": "Processing"},
+            fields=["name", "audio_source_text", "audio_text_fingerprint"],
+        )
+        items = []
+        for row in rows:
+            info = _feedback_language_and_source(row.name)
+            if info is None:
+                continue
+            prepared = prepare_item(
+                info.audio_source_text, info.language, settings.max_text_chars(), settings.over_length_policy
+            )
+            if prepared is None or prepared.fingerprint != row.audio_text_fingerprint:
+                continue
+            items.append({"id": row.name, "text": prepared.text, "language": prepared.language, "format": FORMAT_OGG})
+        runlog.append(run.name, f"manifest re-served {len(items)} items (cached)")
+        return {"items": items}
+
+    fields = {"manifest_served": 1}
     if run.status == STATUS_STARTING:
         fields["status"] = STATUS_RUNNING
-    if fields:
-        runstate.set_fields(run.name, fields)
+        fields["last_beat_at"] = frappe.utils.now_datetime()
+    runstate.set_fields(run.name, fields)
 
     rows = frappe.get_all(
         "Feedback Request",
@@ -90,7 +115,7 @@ def manifest():
             continue
         items.append({"id": row.name, "text": prepared.text, "language": prepared.language, "format": FORMAT_OGG})
 
-    runstate.set_fields(run.name, {"served_count": len(items)})
+    runstate.set_fields(run.name, {"manifest_count": max(run.manifest_count or 0, len(items))})
     runlog.append(run.name, f"manifest served {len(items)} items, {stale} stale")
     return {"items": items}
 
@@ -104,9 +129,9 @@ def _expected_for(item_id, settings):
     )
     if prepared is None:
         return None, None, None
-    expected_hash = contract.expected_hash(prepared.text, prepared.language, settings.model_revision)
+    expected_hash = contract.expected_hash(prepared.text, prepared.language, settings.model_revision, FORMAT_OGG)
     expected_url = contract.expected_url(
-        prepared.text, prepared.language, settings.model_revision, settings.gcs_prefix, settings.cdn_base_url
+        prepared.text, prepared.language, settings.model_revision, settings.gcs_prefix, settings.cdn_base_url, FORMAT_OGG
     )
     return expected_hash, expected_url, info.modified
 
@@ -138,7 +163,9 @@ def _verify_urls(urls):
     except FuturesTimeoutError:
         pass
     finally:
-        pool.shutdown(wait=False)
+        for future in futures:
+            future.cancel()
+        pool.shutdown(wait=False, cancel_futures=True)
     for url in urls:
         verified.setdefault(url, False)
     return verified
@@ -217,12 +244,12 @@ def progress():
 
     for field, value in (
         ("written", written), ("already_set", already_set), ("stale", stale),
-        ("hash_mismatch", hash_mismatch), ("pod_failed", pod_failed),
+        ("hash_mismatch", hash_mismatch), ("bad_url", bad_url), ("pod_failed", pod_failed),
     ):
         if value:
             runstate.increment(run.name, field, value)
 
-    runstate.set_fields(run.name, {"last_progress_at": frappe.utils.now_datetime()})
+    runstate.set_fields(run.name, {"last_progress_at": frappe.utils.now_datetime(), "last_beat_at": frappe.utils.now_datetime()})
     runlog.append(
         run.name,
         f"progress batch of {len(records)}: written={written} already_set={already_set} "
@@ -243,6 +270,10 @@ def beat():
     settings = load_settings()
     phase = frappe.local.form_dict.get("phase")
     remaining = frappe.local.form_dict.get("remaining")
+    try:
+        remaining = int(remaining) if remaining is not None else None
+    except (TypeError, ValueError):
+        remaining = None
 
     fields = {"last_beat_at": frappe.utils.now_datetime(), "last_phase": phase, "remaining_reported": remaining}
     if run.status == STATUS_STARTING:
@@ -257,6 +288,9 @@ def _final_status(pod_reason, run):
     pod_reason = str(pod_reason or "")
     manifest_count = run.manifest_count or 0
     accounted = (run.written or 0) + (run.pod_failed or 0)
+    if pod_reason not in KNOWN_COMPLETE_REASONS:
+        runlog.append(run.name, f"complete: unrecognized reason '{pod_reason}', treating as failure")
+        return STATUS_FAILED
     if pod_reason in ("completed", "empty"):
         if manifest_count == 0 or accounted >= manifest_count:
             return STATUS_COMPLETED
@@ -306,11 +340,18 @@ def complete():
 
     if runstate.can_transition(run.status, final_status):
         fields["status"] = final_status
+    elif run.status == final_status:
+        pass
     else:
         fields["status"] = STATUS_FAILED
+        fields["status_reason"] = f"invalid_transition_{run.status}_to_{final_status}"
 
     runstate.set_fields(run.name, fields)
-    runlog.append(run.name, f"complete reason={reason} final_status={fields['status']}")
+    runlog.append(run.name, f"complete reason={reason} final_status={fields.get('status', run.status)}")
+
+    released = release_stuck_rows(run.name, fields.get("status", run.status))
+    if released:
+        runlog.append(run.name, f"complete released {released} stuck row(s) still Processing")
 
     try:
         from ..lib import breaker

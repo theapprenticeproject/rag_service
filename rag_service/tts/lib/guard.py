@@ -1,6 +1,6 @@
 import frappe
 
-from ..constants import BODY_SIZE_CAP_BYTES, RUN_DOCTYPE
+from ..constants import BODY_SIZE_CAP_BYTES
 from . import runstate, tokens
 
 GENERIC_AUTH_ERROR = "unauthorized"
@@ -80,11 +80,9 @@ def enter(endpoint):
 
     _check_rate_limit(endpoint, run_id)
 
-    if not frappe.db.exists(RUN_DOCTYPE, run_id):
-        raise GuardStop(401, GENERIC_AUTH_ERROR)
-
     run = runstate.get_for_update(run_id)
     if run is None:
+        _bad_auth_throttle(ip)
         raise GuardStop(401, GENERIC_AUTH_ERROR)
 
     if runstate.is_terminal(run.status):

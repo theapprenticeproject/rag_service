@@ -5,6 +5,7 @@ import frappe
 from ..constants import RUN_DOCTYPE
 from ..lib import runlog, runstate
 from ..lib import settings as settings_lib
+from ..lib.release import release_stuck_rows
 from ..lib.runpod import RunPodClient
 
 MAX_ATTEMPTS = 4
@@ -62,8 +63,22 @@ def verify_termination(run_name):
 
 
 def force_delete_now(run_name):
+    from ..constants import TERMINAL_STATUSES
+
     settings = settings_lib.load()
     run = frappe.get_doc(RUN_DOCTYPE, run_name)
+
+    if run.status not in TERMINAL_STATUSES:
+        runstate.set_fields(run_name, {
+            "status": "Stopped",
+            "status_reason": "force_terminated_by_operator",
+        })
+        frappe.db.commit()
+
+    released = release_stuck_rows(run_name, "Stopped")
+    if released:
+        runlog.append(run_name, f"force_delete_now released {released} stuck row(s) still Processing")
+
     if run.pod_id:
         client = _client(settings)
         try:

@@ -24,6 +24,21 @@ TEST_GCS_PREFIX = "tts-e2e-test"
 TEST_CDN_BASE_URL = "https://cdn.example.test"
 TEST_MODEL_REVISION = "e2e-test-rev-1"
 
+SNAPSHOT_SECRET_FIELDS = (
+    "runpod_api_key",
+    "tts_pod_shared_secret",
+    "tts_gcs_service_account_json_b64",
+)
+
+SNAPSHOT_SCHEDULING_FIELDS = (
+    "scheduling_enabled",
+    "schedule_mode",
+    "schedule_interval_minutes",
+    "schedule_cron_expressions",
+    "capacity_retry_enabled",
+    "capacity_retry_minutes",
+)
+
 STUDENTS = [
     {"name": "Durva", "student_id": "E2E-STU-DURVA", "language": "English",
      "text": "Great work Durva! Your artwork shows wonderful use of color and bold outlines. Keep practicing your shading technique and you will improve even more."},
@@ -84,6 +99,28 @@ def _patched_outbound_queue(sent_messages):
         feedback_service_module.FeedbackService.__init__ = real_init
 
 
+def _snapshot_tts_settings():
+    doc = frappe.get_single(SETTINGS_DOCTYPE)
+    snapshot = {}
+    for field in settings_lib.SNAPSHOT_FIELDS:
+        snapshot[field] = doc.get(field)
+    for field in SNAPSHOT_SCHEDULING_FIELDS:
+        if hasattr(doc, field):
+            snapshot[field] = doc.get(field)
+    for field in SNAPSHOT_SECRET_FIELDS:
+        snapshot[field] = doc.get_password(field, raise_exception=False)
+    return snapshot
+
+
+def _restore_tts_settings(snapshot):
+    doc = frappe.get_single(SETTINGS_DOCTYPE)
+    for field, value in snapshot.items():
+        doc.set(field, value)
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+    settings_lib.load_fresh()
+
+
 def _ensure_test_tts_settings():
     doc = frappe.get_single(SETTINGS_DOCTYPE)
     doc.enabled = 1
@@ -135,6 +172,8 @@ def _ensure_test_tts_settings():
     doc.cdn_base_url = TEST_CDN_BASE_URL
     doc.model_revision = TEST_MODEL_REVISION
     doc.verify_urls_on_write = 0
+    if hasattr(doc, "scheduling_enabled"):
+        doc.scheduling_enabled = 0
     doc.save(ignore_permissions=True)
     frappe.db.commit()
     settings_lib.load_fresh()
@@ -440,11 +479,29 @@ def _simulate_pod_lifecycle(result, run_name, expected_rows_by_id):
     else:
         result.ok("manifest ids match expected ids")
 
+    second_manifest = _call_manifest(run_name, token)
+    second_items = second_manifest.get("items", [])
+    if len(second_items) != len(items):
+        result.fail(
+            "repeat manifest call returns the same item count (idempotent)",
+            f"first={len(items)} second={len(second_items)}",
+        )
+    else:
+        result.ok("repeat manifest call returns the same item count (idempotent)")
+
     run = frappe.get_doc(RUN_DOCTYPE, run_name)
     if run.status != "Running":
         result.fail("run flips to Running after manifest while Starting", f"got {run.status}")
     else:
         result.ok("run flips to Running after manifest while Starting")
+
+    if run.manifest_count != len(items):
+        result.fail(
+            "manifest_count unaffected by repeat manifest call",
+            f"expected {len(items)}, got {run.manifest_count}",
+        )
+    else:
+        result.ok("manifest_count unaffected by repeat manifest call")
 
     beat_response = _call_beat(run_name, token, phase="generating", remaining=len(items))
     if beat_response.get("stop"):
@@ -654,6 +711,7 @@ def _test_reaper_releases_stuck_run(result):
 def run_all():
     result = TestResult()
     sent_messages = []
+    snapshot = _snapshot_tts_settings()
 
     try:
         print("=" * 72)
@@ -707,6 +765,7 @@ def run_all():
 
     finally:
         frappe.db.commit()
+        _restore_tts_settings(snapshot)
 
     success = result.summary()
     return {"success": success, "passed": len(result.passed), "failed": len(result.failed)}
