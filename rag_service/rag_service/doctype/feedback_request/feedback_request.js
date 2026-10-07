@@ -1,5 +1,5 @@
 frappe.listview_settings['Feedback Request'] = {
-    add_fields: ["result_status", "is_plagiarized", "is_ai_generated"],
+    add_fields: ["result_status", "is_plagiarized", "is_ai_generated", "audio_status", "audio_feedback_url"],
 
     get_indicator: function(doc) {
         const status_map = {

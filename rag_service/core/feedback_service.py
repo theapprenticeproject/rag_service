@@ -1,11 +1,13 @@
-# rag_service/rag_service/core/feedback_service.py
-
 import frappe
 import json
 from datetime import datetime
 from typing import Dict
 from ..feedback_utils.evaluation_generation import EvaluationGenerator
 from ..utils.queue_manager import QueueManager
+from ..tts.lib.settings import load as load_tts_settings
+from ..tts.lib import languages as tts_languages
+from ..tts.lib.text import prepare as prepare_tts_text, fingerprint as tts_fingerprint
+
 
 class FeedbackService:
     def __init__(self):
@@ -15,20 +17,16 @@ class FeedbackService:
 
     async def generate_feedback( self, assignment_context: Dict, submission_data: Dict, submission_id: str,
                                     plagiarism_data: Dict = None, feedback_request_id: str = None) -> Dict:
-        """Generate feedback with plagiarism context"""
-
         result_status = "Pending"
         model_used = "N/A"
         tempalate_used = "N/A"
 
         try:
-            # Check for plagiarism/AI-generated content first
             if plagiarism_data:
                 is_plagiarized = plagiarism_data.get("is_plagiarized", False)
                 is_ai_generated = plagiarism_data.get("is_ai_generated", False)
                 match_type = plagiarism_data.get("match_type", "original")
 
-                # Handle AI-generated submissions
                 if is_ai_generated:
                     result_status = "Success - Flagged"
                     feedback = self._create_ai_generated_feedback(
@@ -36,21 +34,19 @@ class FeedbackService:
                     )
                     tempalate_used = "Feedback Template for AI Generated Submission"
 
-                # Handle plagiarized submissions
                 elif is_plagiarized:
                     result_status = "Success - Flagged"
                     feedback = self._create_plagiarism_feedback(
                         plagiarism_data
                     )
                     tempalate_used = "Feedback Template for Plagiarized Submission"
-                
-                # Continue with normal feedback generation for original work
+
                 else:
                     result_status = "Success - Original"
                     feedback, model_used, tempalate_used = await self.evaluation_generator.generate_ai_feedback(
                         assignment_context, submission_data, submission_id
                     )
-            
+
             feedback["translation_language"] = assignment_context["student"].get("language", "English")
             await self._update_result_status(feedback_request_id, result_status)
             return feedback, model_used, tempalate_used
@@ -63,11 +59,8 @@ class FeedbackService:
     async def process_feedback(
         self, request_id: str, feedback: Dict, model_used: str, template_used: str
     ) -> None:
-        """Process and store feedback in Feedback Request DocType."""
         try:
-            # Get the feedback request document
             feedback_request = frappe.get_doc("Feedback Request", request_id)
-            # Update document fields using db_set
             feedback_request.db_set("status", "Completed", update_modified=True)
             feedback_request.db_set(
                 "generated_feedback",
@@ -81,27 +74,11 @@ class FeedbackService:
             feedback_request.db_set("model_used", model_used, update_modified=True)
             feedback_request.db_set("template_used", template_used, update_modified=True)
 
-            # Commit changes
+            self._decide_audio_eligibility(feedback_request, feedback)
+
             frappe.db.commit()
 
-            # Verify the update
-            updated_doc = frappe.get_doc("Feedback Request", request_id)
-            # Prepare and send message to TAP LMS
-            message = {
-                "submission_id": feedback_request.submission_id,
-                "student_id": feedback_request.student_id,
-                "assignment_id": feedback_request.assignment_id,
-                "feedback": feedback,
-                "generated_at": feedback_request.completed_at.isoformat()
-                if feedback_request.completed_at
-                else datetime.now().isoformat(),
-            }
-
-            # Send to TAP LMS queue
-            self.queue_manager.send_feedback_to_tap(message)
-
-            print("Payload sent to TAP LMS queue:")
-            print(json.dumps(message, indent=2, ensure_ascii=False))
+            await self.release_to_lms_if_ready(request_id)
 
         except Exception as e:
             error_msg = f"Error processing feedback: {str(e)}"
@@ -111,22 +88,94 @@ class FeedbackService:
                 if "feedback_request" in locals() and feedback_request:
                     feedback_request.db_set("status", "Failed", update_modified=True)
                     feedback_request.db_set("error_log", error_msg, update_modified=True)
+                    feedback_request.db_set("audio_status", "Not Applicable", update_modified=True)
                     frappe.db.commit()
                     print(f"Request {request_id} marked as failed")
+                    await self.release_to_lms_if_ready(request_id)
             except Exception as save_error:
                 print(f"Error saving failure status: {str(save_error)}")
 
             frappe.log_error(error_msg, "Feedback Processing Error")
             raise
 
+    def _decide_audio_eligibility(self, feedback_request, feedback: Dict) -> None:
+        try:
+            plagiarism = feedback.get("plagiarism_output") or {}
+            if plagiarism.get("is_plagiarized") or plagiarism.get("is_ai_generated"):
+                feedback_request.db_set("audio_status", "Not Applicable", update_modified=True)
+                return
+
+            tts_settings = load_tts_settings()
+            if not tts_settings.kill_switch_on():
+                feedback_request.db_set("audio_status", "Not Applicable", update_modified=True)
+                return
+
+            translated_text = (feedback.get("overall_feedback_translated") or "").strip()
+            language = tts_languages.normalize(feedback.get("translation_language") or "English")
+
+            if language is None or not translated_text:
+                feedback_request.db_set("audio_status", "Not Applicable", update_modified=True)
+                return
+
+            prepared, _truncated = prepare_tts_text(
+                translated_text, tts_settings.max_text_chars(), tts_settings.over_length_policy
+            )
+            if not prepared:
+                feedback_request.db_set("audio_status", "Not Applicable", update_modified=True)
+                return
+
+            feedback_request.db_set({
+                "audio_status": "Queued",
+                "audio_source_text": prepared,
+                "audio_text_fingerprint": tts_fingerprint(prepared, language),
+                "audio_queued_at": datetime.now(),
+            }, update_modified=True)
+
+        except Exception as e:
+            print(f"\nAudio eligibility check failed, defaulting to Not Applicable: {e}")
+            feedback_request.db_set("audio_status", "Not Applicable", update_modified=True)
+
+    async def release_to_lms_if_ready(self, request_id: str) -> None:
+        if not request_id or not frappe.db.exists("Feedback Request", request_id):
+            return
+
+        row = frappe.get_doc("Feedback Request", request_id)
+
+        if row.sent_to_lms_at:
+            return
+
+        if row.audio_status not in ("Not Applicable", "Completed", "Failed", "", None):
+            return
+
+        try:
+            feedback = json.loads(row.generated_feedback or "{}")
+        except Exception:
+            feedback = {}
+
+        feedback["audio_feedback_url"] = row.audio_feedback_url or ""
+
+        message = {
+            "submission_id": row.submission_id,
+            "student_id": row.student_id,
+            "assignment_id": row.assignment_id,
+            "feedback": feedback,
+            "generated_at": (row.completed_at or datetime.now()).isoformat(),
+        }
+
+        self.queue_manager.send_feedback_to_tap(message)
+        frappe.db.set_value("Feedback Request", request_id, "sent_to_lms_at", frappe.utils.now_datetime())
+        frappe.db.commit()
+
+        print("Payload sent to TAP LMS queue:")
+        print(json.dumps(message, indent=2, ensure_ascii=False))
+
     async def _update_result_status(self, feedback_request_id: str, status: str, error_message: str = None):
-        """Update Feedback Request result_status"""
         if not feedback_request_id:
             return
 
         update_data = {"result_status": status}
         if error_message:
-            update_data["error_message"] = error_message[:500]  # Truncate long errors
+            update_data["error_message"] = error_message[:500]
 
         frappe.db.set_value(
             "Feedback Request",
@@ -137,8 +186,6 @@ class FeedbackService:
         frappe.db.commit()
 
     def _create_ai_generated_feedback(self, plagiarism_data: Dict) -> Dict:
-        """Create feedback for AI-generated submissions"""
-
         ai_source = plagiarism_data.get("ai_detection_source", "unknown")
         ai_confidence = plagiarism_data.get("ai_confidence", 0.0)
         response = {
@@ -175,13 +222,11 @@ class FeedbackService:
         return response
 
     def _create_plagiarism_feedback( self, plagiarism_data: Dict) -> Dict:
-        """Create feedback for plagiarized submissions"""
-
         match_type = plagiarism_data.get("match_type")
         plagiarism_source = plagiarism_data.get("plagiarism_source")
         similarity_score = plagiarism_data.get("similarity_score", 0.0)
         ai_confidence = plagiarism_data.get("ai_confidence", 0.0)
-        
+
         if plagiarism_source =="peer":
             feedback = "Hi Champ, I found you have sent another student's work. Please send your work. No cheating this time. Excited to see what you made."
         elif plagiarism_source =="self":
@@ -190,7 +235,6 @@ class FeedbackService:
             feedback = "Hi Champ, I found you have sent work that closely matches reference materials. Please submit your own original work. I'm excited to see your unique creation!"
         else:
             feedback = "Hi Champ, I found you have sent work that closely matches existing content. Please submit your own original work. I'm excited to see your unique creation!"
-        # respond with structured feedback
         response = {
             "overall_feedback": feedback,
             "overall_feedback_translated": feedback,
@@ -226,8 +270,6 @@ class FeedbackService:
         return response 
 
     def validate_feedback_structure(self, feedback: Dict, expected_format: Dict) -> Dict:
-        """Ensure feedback has all required fields with correct types"""
-        # Ensure all expected fields are present
         for field in expected_format:
             if field not in feedback:
                 if isinstance(expected_format[field], list):
@@ -236,24 +278,21 @@ class FeedbackService:
                     feedback[field] = 0
                 else:
                     feedback[field] = "No information provided"
-        
-        # Validate final_grade format for TAP LMS compatibility
+
         try:
             grade = feedback.get("final_grade", 0)
             if isinstance(grade, str):
-                # Extract numeric part only
                 grade_clean = ''.join(c for c in grade if c.isdigit() or c == '.')
                 grade = float(grade_clean) if grade_clean else 0
             feedback["final_grade"] = max(0, min(100, float(grade)))
         except (ValueError, TypeError):
             feedback["final_grade"] = 0
-        
-        # Ensure list fields are lists
+
         list_fields = ["strengths", "areas_for_improvement", "learning_objectives_feedback"]
         for field in list_fields:
             if field in feedback and not isinstance(feedback[field], list):
                 feedback[field] = [str(feedback[field])]
-        
+
         return feedback
 
     # def create_fallback_feedback(self, expected_format: Dict) -> Dict:
@@ -291,8 +330,6 @@ class FeedbackService:
     #     return fallback
 
     def create_error_feedback(self, error_msg: str) -> Dict:
-        """Create feedback for system errors"""
-
         feedback = {
             "overall_feedback": "I encountered a system error while processing your submission. This appears to be a technical issue on our end.",
             "overall_feedback_translated": "I encountered a system error while processing your submission. This appears to be a technical issue on our end. ",
@@ -319,5 +356,5 @@ class FeedbackService:
                 "similar_sources": []
             }
         feedback["plagiarism_output"] = plagiarism_output
-        
+
         return feedback
