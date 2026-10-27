@@ -85,9 +85,9 @@ Note the returned `config_id`s (session values: image `67865d5f-…`, text `ec7c
 ## Part 3 — Kaapi Settings
 Open `/app/kaapi-settings` as a System Manager. Follow the field table in
 `KAAPI_DEPLOY_CHECKLIST.md`: enter the API Key, Base URL, Image/Text Config IDs and Versions,
-Callback URL (without a token), and Webhook Secret, then check **Enable Assessments** and save.
-Keep **Allow Insecure Webhook** unchecked to test authentication. No bench environment variables
-are required; the submitter adds the encoded webhook token automatically.
+bare Callback URL and Webhook Secret, then check **Enable Assessments** and save. Register the
+same secret in Kaapi's Credentials API. Keep **Allow Insecure Webhook** unchecked to test HMAC
+authentication. No bench environment variables or callback query tokens are required.
 
 For a local test with no public host, set Callback URL to a webhook.site inbox (to capture the
 payload), using a disposable test secret, or use a `cloudflared`/`ngrok` tunnel to your bench (Part 5b).
@@ -158,15 +158,12 @@ from rag_service.api.kaapi_webhook import process_payload
 print(process_payload(json.load(open("/workspace/rag_service/_wh.json"))))
 ```
 
-**(ii) Real HTTP endpoint (proves `receive()` over HTTP).** Start the web server and POST the
-captured payload to the live endpoint (save `e2e-secret` as Webhook Secret in Kaapi Settings first):
+**(ii) Real HTTP endpoint (proves `receive()` over HTTP).** Start the web server and submit an
+assessment through Kaapi, which signs the callback with the registered Webhook Secret:
 ```bash
 docker exec -d rag-bench-frappe-1 \
   bash -lc 'cd /home/frappe/frappe-bench && bench serve --port 8000'
-# wrong token -> 401 ; correct token -> {ok, completed:N}
-curl -s -H "Host: rag.localhost" -H "Content-Type: application/json" \
-  --data-binary @_wh.json \
-  'http://localhost:8000/api/method/rag_service.api.kaapi_webhook.receive?token=e2e-secret'
+# Missing, stale or incorrect HMAC headers -> 401.
 ```
 
 **(iii) True end-to-end (Kaapi calls you).** Run a tunnel so Kaapi reaches your bench directly:

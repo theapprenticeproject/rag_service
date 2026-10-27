@@ -35,8 +35,8 @@ As a System Manager, open **Kaapi Settings** (`/app/kaapi-settings`) and save:
 | Webhook Secret | A strong shared secret (encrypted Password field) |
 | Allow Insecure Webhook | Unchecked (local testing only) |
 
-The submitter appends the URL-encoded `token` from Webhook Secret automatically. Do not put
-the secret in Callback URL. Configure both media types when grading images and text/emoji;
+Register the same Webhook Secret in Kaapi's Credentials API. Kaapi signs callbacks with
+`X-Webhook-Signature` and `X-Webhook-Timestamp`; the secret is never put in the URL. Configure both media types when grading images and text/emoji;
 at least one config is required to enable assessments. Config versions must be positive integers.
 Kaapi's configs select the grading model/provider; assessments do not need an LLM Settings row.
 Existing RAG, RabbitMQ, GCS and prompt settings still serve their existing purposes.
@@ -53,8 +53,8 @@ once when deploying this code so they load the new implementation.
 - [ ] Public HTTPS route to `/api/method/rag_service.api.kaapi_webhook.receive`, reachable
       from Kaapi's servers (through the LB/ingress).
 - [ ] Endpoint is guest-callable (already `@frappe.whitelist(allow_guest=True)`); it is
-      protected by the `?token=` secret. Leave **Allow Insecure Webhook** unchecked.
-- [ ] Confirm **Callback URL** points to the public endpoint; the token is added automatically.
+      protected by Kaapi's HMAC-SHA256 signature. Leave **Allow Insecure Webhook** unchecked.
+- [ ] Confirm **Callback URL** points to the bare public endpoint and contains no secret.
 
 ## 4. Smoke test on staging
 - [ ] Seed one Pending image + one Pending text Feedback Request (or let the normal

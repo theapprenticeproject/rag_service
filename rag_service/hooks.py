@@ -184,6 +184,9 @@ scheduler_events = {
 			"rag_service.core.batch_runner.enqueue_nightly_batch"
 		]
         
+		# "*/30 * * * *   " 
+		# # Run daily at 11:00, 13:00, 14:00, 18:00, 19:00, 20:00 (server time)
+		# "0 11,13,14,18,19,20 * * *"
 	}
 }
 

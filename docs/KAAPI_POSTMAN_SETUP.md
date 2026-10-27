@@ -160,7 +160,7 @@ Strict-mode rules OpenAI enforces (violate → the whole batch fails **silently*
       { "submission_id": "ROW-1", "rendered_prompt": "<full grading prompt>", "artwork_image": "gs://assignment_submission_tap/x.jpg" }
     ]
   },
-  "callback_url": "https://<public-host>/api/method/rag_service.api.kaapi_webhook.receive?token=<secret>",
+  "callback_url": "https://<public-host>/api/method/rag_service.api.kaapi_webhook.receive",
   "request_metadata": { "batch": "whatever" }
 }
 ```
@@ -200,7 +200,8 @@ Strict-mode rules OpenAI enforces (violate → the whole batch fails **silently*
 - [ ] `/credentials` google-gcp needs `api_key` + `sa_key` + `project_id` + `location` + `gcs_bucket`.
 - [ ] `json_output_schema`: all properties in `required` + `additionalProperties:false`, else the
       batch fails silently (null outputs).
-- [ ] `callback_url` required; no polling. Match it exactly (bare endpoint, correct token).
+- [ ] `callback_url` required; no polling. Use the bare endpoint. Register the matching
+      webhook secret in Kaapi so callbacks carry valid HMAC headers.
 - [ ] Literal `{…}` braces inside `rendered_prompt` pass through Kaapi's `{var}` substitution
       untouched — no escaping needed (validated).
 

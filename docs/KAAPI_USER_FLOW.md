@@ -54,9 +54,9 @@ are still graded in real time.
 ## Phase D — Completion: Kaapi calls our webhook
 
 9. **Kaapi POSTs the results** to our `callback_url`:
-   `POST /api/method/rag_service.api.kaapi_webhook.receive?token=<secret>`.
+   `POST /api/method/rag_service.api.kaapi_webhook.receive` with HMAC signature headers.
 10. **Our webhook (`receive`)**:
-    - verifies the `token` (else 401),
+    - verifies `X-Webhook-Signature` over `timestamp.raw_body` and rejects stale requests,
     - parses the batch body,
     - **matches each result to its submission by the echoed `submission_id`**,
     - graded row → `finalize_feedback` → `process_feedback` → **push to `feedback_results`**,
@@ -89,8 +89,8 @@ STUDENT/LMS      PLAGIARISM        rag_service            KAAPI            LMS (
  6  |                |                  |-- POST /assessments (batch + callback)->|
  7  |                |                  |  mark Submitted; job ends               |
     .                .                  .                    | grades in parallel .
- 9  |                |                  |<-- POST results (webhook + token) ------|
-10  |                |                  |  verify token, match by submission_id   |
+ 9  |                |                  |<-- POST results (signed webhook) -------|
+10  |                |                  |  verify HMAC, match by submission_id    |
     |                |                  |  finalize -> deliver ------------------>|
 11  |<-- feedback shown ----------------------------------------------------------|
 ```
@@ -122,7 +122,7 @@ Uncheck **Enable Assessments** in Kaapi Settings → the nightly batch reverts t
 - **Kaapi Settings → Enable Assessments** — enables this flow; no environment variables required
 - **Image/Text Config ID and Version** — the Kaapi configs
 - **API Key / Base URL** — Kaapi credentials and server
-- **Callback URL** — public webhook URL without a token
-- **Webhook Secret** — stored encrypted and appended to the callback URL automatically
+- **Callback URL** — bare public webhook URL
+- **Webhook Secret** — stored encrypted locally and registered in Kaapi for HMAC signing
 - **Allow Insecure Webhook** — leave unchecked in production
 - Nightly cron time — `hooks.py` `scheduler_events` (default 01:00)

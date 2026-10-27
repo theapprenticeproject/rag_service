@@ -12,6 +12,18 @@ from ..utils.gcp_service_client import GCPServiceClient
 class VideoEvaluationGenerator(EvaluationGenerator):
     """Generate AI feedback for video submissions."""
 
+    def build_eval_request(
+        self, assignment_context: Dict, submission_data: Dict, *, for_assessment: bool = False
+    ) -> Dict:
+        """Everything before the model call, for video submissions. Adds the video
+        URL so the nightly Kaapi submit phase can pack it into the batch (Kaapi reads
+        the `gs://` URL directly via the registered credential — no signing needed)."""
+        req = self._prepare_eval(
+            assignment_context, submission_data, "video", for_assessment=for_assessment
+        )
+        req["video_url"] = submission_data.get("submission_url")
+        return req
+
     async def generate_feedback(
         self, assignment_context: Dict, submission_data: Dict, submission_id: str
     ) -> Tuple[Dict, str, str]:
@@ -20,47 +32,40 @@ class VideoEvaluationGenerator(EvaluationGenerator):
         try:
             print("\n=== Starting AI Feedback Generation (Video) ===")
 
-            llm_provider, model_used = self._create_llm_provider("Gemini")
-            
-            activity_type = assignment_context["assignment"].get("activity_type")
-            course_vertical = assignment_context["assignment"].get("course_vertical")
-            print(f"Activity Type: {activity_type}, Course Vertical: {course_vertical}")
+            req = self.build_eval_request(assignment_context, submission_data)
+            llm_provider = req["llm_provider"]
+            combined_prompt = req["combined_prompt"]
 
-
-            template = self.get_prompt_template("video", "both", activity_type, course_vertical)
-            expected_format = self._get_expected_format(template)
-
-            system_prompt, formatted_user_prompt = self._format_prompts(
-                template,
-                assignment_context,
-                submission_data,
-                [],
-            )
-            combined_prompt = f"{system_prompt}\n\n{formatted_user_prompt}"
-
-            media_service = GCPServiceClient()
-            media_asset = media_service.download_media(submission_data["submission_url"])
-
-            response = await llm_provider.generate_with_video(
-                media_asset,
-                combined_prompt,
-                mime_type=media_asset["mime_type"],
-            )
+            if req["provider_name"] == "Kaapi":
+                # Kaapi fetches the video itself — hand it a short-lived signed URL so
+                # it works for private buckets too (no bytes downloaded locally).
+                media_service = GCPServiceClient()
+                video_url = media_service.signed_url(req["video_url"])
+                response = await llm_provider.generate_with_video(
+                    video_url,
+                    combined_prompt,
+                    mime_type=None,
+                )
+            else:
+                media_service = GCPServiceClient()
+                media_asset = media_service.download_media(req["video_url"])
+                response = await llm_provider.generate_with_video(
+                    media_asset,
+                    combined_prompt,
+                    mime_type=media_asset["mime_type"],
+                )
             raw_text = response.text
             self.cost = llm_provider.calculate_cost(response.to_dict())
 
             self.log_prob_feedback = response.to_dict().get("candidates", [{}])[0].get("avg_logprobs", None)
 
             print(f"\nRaw LLM Output:\n{raw_text}")
-            feedback = self._parse_feedback(raw_text, expected_format)
-            feedback = self._attach_plagiarism_defaults(feedback)
-            feedback = self._attach_default_fileds(feedback)
-            feedback['strengths'] = [f"cost:{self.cost}", f"Feedback_LP:{self.log_prob_feedback}", f"Eval_LP:{0.0}"]
+            feedback = self.finalize_feedback(
+                raw_text, req["expected_format"], self.cost, self.log_prob_feedback
+            )
 
-            template_used = self._template_used_name(template)
-
-            print("\n===Feedback Generation Completed ===")
-            return feedback, model_used, template_used
+            print("\n=== Video Feedback Generation Completed ===")
+            return feedback, req["model_used"], req["template_used"]
 
         except Exception as e:
             error_detail = str(e) or repr(e)

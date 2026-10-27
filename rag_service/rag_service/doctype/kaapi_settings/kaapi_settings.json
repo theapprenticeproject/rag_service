@@ -16,12 +16,14 @@
   "image_config_id",
   "image_config_version",
   "text_config_id",
-  "text_config_version"
+  "text_config_version",
+  "video_config_id",
+  "video_config_version"
  ],
  "fields": [
   {
    "default": "0",
-   "description": "Defer image, text and emoji submissions to the nightly Kaapi assessment batch. Disable to use the synchronous grading path.",
+   "description": "Defer image, text, emoji and video submissions to the nightly Kaapi assessment batch. Disable to use the synchronous grading path.",
    "fieldname": "enable_assessments",
    "fieldtype": "Check",
    "label": "Enable Assessments"
@@ -52,14 +54,14 @@
    "label": "Webhook"
   },
   {
-   "description": "Public URL ending in /api/method/rag_service.api.kaapi_webhook.receive. Omit the token; Webhook Secret is added automatically when submitting.",
+   "description": "Public URL ending in /api/method/rag_service.api.kaapi_webhook.receive. Kaapi signs callbacks with the separately registered Webhook Secret.",
    "fieldname": "callback_url",
    "fieldtype": "Small Text",
    "label": "Callback URL",
    "mandatory_depends_on": "eval:doc.enable_assessments"
   },
   {
-   "description": "Shared secret used to authenticate callbacks. Keep this unchanged while batches are awaiting results.",
+   "description": "Shared secret registered in Kaapi and used to verify callback HMAC signatures. Keep this unchanged while batches are awaiting results.",
    "fieldname": "webhook_secret",
    "fieldtype": "Password",
    "label": "Webhook Secret",
@@ -100,11 +102,22 @@
    "fieldname": "text_config_version",
    "fieldtype": "Int",
    "label": "Text Config Version"
+  },
+  {
+   "fieldname": "video_config_id",
+   "fieldtype": "Data",
+   "label": "Video Config ID"
+  },
+  {
+   "default": "1",
+   "fieldname": "video_config_version",
+   "fieldtype": "Int",
+   "label": "Video Config Version"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-09-29 00:00:00.000000",
+ "modified": "2026-10-15 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Rag Service",
  "name": "Kaapi Settings",

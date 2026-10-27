@@ -12,12 +12,12 @@ from ..utils.submission_data import build_submission_content, normalize_submissi
 from ..rag_service.doctype.kaapi_settings.kaapi_settings import assessments_enabled
 
 # Submission types that are DEFERRED to the nightly batch when batch mode is on.
-# Audio/video are always processed in real time (not handled by the batch grader).
-DEFERRED_SUBMISSION_TYPES = {"image", "text", "emoji"}
+# Audio is always processed in real time (not handled by the batch grader).
+DEFERRED_SUBMISSION_TYPES = {"image", "text", "emoji", "video"}
 
 
 def batch_mode_enabled() -> bool:
-    """When on, image/text submissions are saved as Pending and graded by the
+    """When on, image/text/video submissions are saved as Pending and graded by the
     nightly batch instead of in real time. Kaapi assessments always require deferral;
     RAG_BATCH_MODE controls only the legacy synchronous grading path."""
     if assessments_enabled():
@@ -36,8 +36,8 @@ class FeedbackHandler:
         submission_data = normalize_submission_payload(message_data)
         submission_type = (submission_data.get("submission_type") or "").lower()
 
-        # Batch mode: image/text are DEFERRED — save a Pending record and stop
-        # (the nightly batch grades them). Audio/video keep processing in real time.
+        # Batch mode: image/text/video are DEFERRED — save a Pending record and stop
+        # (the nightly batch grades them). Audio keeps processing in real time.
         if batch_mode_enabled() and submission_type in DEFERRED_SUBMISSION_TYPES:
             request_id = await self.create_feedback_request(
                 message_data, submission_data, status="Pending"
@@ -55,6 +55,8 @@ class FeedbackHandler:
             assignment_context = await self.assignment_context_manager.get_assignment_context(
                 message_data["assignment_id"]
             )
+            if message_data["language"] == "Hinglish":
+                message_data["language"] = "Hindi"
             assignment_context["student"] = {
                             "student_id":message_data["student_id"],    
                             "grade":message_data["grade"],

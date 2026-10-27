@@ -28,7 +28,7 @@ def start_consumer(context):
 @click.option('--max-items', default=0, help='Optional cap for a smoke test (0 = all)')
 @pass_context
 def run_nightly_batch_command(context, page_size, concurrency, max_items):
-    """Grade all Pending image/text submissions in parallel (overnight batch)."""
+    """Grade all Pending image/text/video submissions in parallel (overnight batch)."""
     site = context.sites[0]
     frappe.init(site=site)
     frappe.connect()

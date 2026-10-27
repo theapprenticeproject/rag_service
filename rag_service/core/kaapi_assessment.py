@@ -13,7 +13,7 @@ Why it's built this way (verified against the live API, see KAAPI_ASSESSMENT_SWI
   `output.assessment = null` and echoes NO id. So each row carries a `submission_id`
   (the Feedback Request name) for validation, and we persist its batch index as the
   primary correlation key.
-- One thin generic config per media type (image/text) carries the fixed grading
+- One thin generic config per media type (image/text/video) carries the fixed grading
   instructions + output schema; the rubric/description/level/language ride inside the
   `rendered_prompt` input, so a single config serves every assignment.
 
@@ -46,7 +46,7 @@ class KaapiAssessmentClient:
 
     # ---- config lookup ----
     def _config_for(self, media_type: str) -> Tuple[Optional[str], int]:
-        kind = "text" if media_type == "text" else "image"
+        kind = media_type if media_type in ("text", "video") else "image"
         config_id = (self.settings.get(f"{kind}_config_id") or "").strip() or None
         version = int(self.settings.get(f"{kind}_config_version") or 1)
         return config_id, version
@@ -128,12 +128,12 @@ class KaapiAssessmentClient:
                              "Kaapi Webhook Log Error")
 
     @staticmethod
-    def _normalize_image_url(image_url: Optional[str]) -> str:
-        """Return a GCS URI or reject an image that Kaapi cannot read through GCS."""
-        error = "Kaapi image URL must be gs://bucket/object or a supported GCS HTTP(S) URL."
-        if not isinstance(image_url, str) or not image_url.strip():
+    def _normalize_media_url(media_url: Optional[str]) -> str:
+        """Return a GCS URI or reject media that Kaapi cannot read through GCS."""
+        error = "Kaapi media URL must be gs://bucket/object or a supported GCS HTTP(S) URL."
+        if not isinstance(media_url, str) or not media_url.strip():
             raise ValueError(error)
-        parsed = urlsplit(image_url.strip())
+        parsed = urlsplit(media_url.strip())
         if parsed.username is not None or parsed.password is not None or parsed.port is not None:
             raise ValueError(error)
 
@@ -160,12 +160,20 @@ class KaapiAssessmentClient:
     # ---- public ----
     @classmethod
     def build_row(cls, submission_id: str, rendered_prompt: str,
-                  media_type: str, image_url: Optional[str] = None) -> Dict:
+                  media_type: str, media_url: Optional[str] = None) -> Dict:
         """One `input.data` row shaped to the config's input_schema."""
         row = {"submission_id": submission_id, "rendered_prompt": rendered_prompt}
-        if media_type != "text":
-            row["artwork_image"] = cls._normalize_image_url(image_url)
+        media_field = cls._media_field(media_type)
+        if media_field:
+            row[media_field] = cls._normalize_media_url(media_url)
         return row
+
+    @staticmethod
+    def _media_field(media_type: str) -> Optional[str]:
+        """The input_schema field that carries the media URL (None for text)."""
+        if media_type == "text":
+            return None
+        return "artwork_video" if media_type == "video" else "artwork_image"
 
     def submit(self, rows: List[Dict], media_type: str,
                request_metadata: Optional[Dict] = None) -> str:
@@ -180,13 +188,15 @@ class KaapiAssessmentClient:
         if not config_id:
             raise ValueError(
                 f"No Kaapi config configured for media_type={media_type} "
-                f"(set {'Text' if media_type == 'text' else 'Image'} Config ID in Kaapi Settings)"
+                f"(set {media_type.title() if media_type in ('text', 'video') else 'Image'} "
+                f"Config ID in Kaapi Settings)"
             )
 
-        if media_type != "text":
+        media_field = self._media_field(media_type)
+        if media_field:
             # Normalize at the send boundary, including callers that construct rows directly.
             rows = [
-                {**row, "artwork_image": self._normalize_image_url(row.get("artwork_image"))}
+                {**row, media_field: self._normalize_media_url(row.get(media_field))}
                 for row in rows
             ]
 

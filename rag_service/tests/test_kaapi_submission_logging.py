@@ -1,5 +1,7 @@
 """Submission audit regression checks without a running Frappe site or Kaapi calls."""
 import importlib.util
+import hashlib
+import hmac
 import json
 import sys
 import unittest
@@ -24,19 +26,21 @@ class TestKaapiSubmissionLogging(unittest.TestCase):
         self.document.name = "LOG-001"
         self.frappe.get_doc.return_value = self.document
 
-        settings = Mock(base_url="https://kaapi.example")
+        settings = Mock(base_url="https://kaapi.example", allow_insecure_webhook=False)
         settings.get_secret.return_value = "api-secret"
         settings.get_callback_url.return_value = (
-            "https://rag.example/callback?site=rag&token=webhook-secret&empty="
+            "https://rag.example/callback?site=rag&empty="
         )
         settings.get.side_effect = {
             "image_config_id": "image-config", "image_config_version": 2,
             "text_config_id": "text-config", "text_config_version": 3,
+            "video_config_id": "video-config", "video_config_version": 4,
         }.get
         settings_module = ModuleType(SETTINGS_MODULE)
         settings_module.DEFAULT_BASE_URL = "https://kaapi.example"
         settings_module.get_kaapi_settings = lambda: settings
         settings_module.assessments_enabled = lambda: True
+        self.settings = settings
         self.addCleanup(patch.stopall)
         patch.dict(sys.modules, {
             "frappe": self.frappe,
@@ -95,7 +99,7 @@ class TestKaapiSubmissionLogging(unittest.TestCase):
             {k: v for k, v in sent.items() if k != "callback_url"},
         )
         self.assertEqual(parse_qs(urlsplit(payload["callback_url"]).query, keep_blank_values=True),
-                         {"site": ["rag"], "token": ["***"], "empty": [""]})
+                         {"site": ["rag"], "empty": [""]})
         self.assertEqual(sent["callback_url"], self.client.callback_url)
         self.assertNotIn("webhook-secret", saved["raw_body"])
         self.assertNotIn("api-secret", saved["raw_body"])
@@ -110,6 +114,26 @@ class TestKaapiSubmissionLogging(unittest.TestCase):
         self.assertEqual(payload["input"]["data"], self.rows)
         self.assertEqual(payload["config"], {"id": "text-config", "version": 3})
         self.assertEqual(payload["request_metadata"], {})
+
+    def test_video_batch_uses_video_config_and_normalizes_urls(self):
+        row = self.client.build_row(
+            "FR-1", "Grade this video", "video",
+            "https://storage.googleapis.com/assignment_submission_tap/clip.mp4?X-Goog-Signature=s",
+        )
+        self.assertEqual(row, {"submission_id": "FR-1", "rendered_prompt": "Grade this video",
+                               "artwork_video": "gs://assignment_submission_tap/clip.mp4"})
+        self.client.submit([row], "video")
+        payload = json.loads(self._saved_fields()["raw_body"])
+        self.assertEqual(payload["config"], {"id": "video-config", "version": 4})
+        self.assertEqual(payload["input"]["data"], [row])
+        with self.assertRaisesRegex(ValueError, "Kaapi media URL"):
+            self.client.submit(self.rows, "video")  # Missing artwork_video.
+
+    def test_missing_video_config_names_the_video_field(self):
+        self.client.settings.get.side_effect = {}.get
+        with self.assertRaisesRegex(ValueError, "Video Config ID"):
+            self.client.submit(self.rows, "video")
+        self.post.assert_not_called()
 
     def test_image_batch_normalizes_gcs_urls_without_mutating_rows(self):
         cases = [
@@ -162,7 +186,7 @@ class TestKaapiSubmissionLogging(unittest.TestCase):
         ]
         for image_url in invalid_urls:
             with self.subTest(url=image_url):
-                with self.assertRaisesRegex(ValueError, "Kaapi image URL"):
+                with self.assertRaisesRegex(ValueError, "Kaapi media URL"):
                     self.client.build_row("FR-1", "Grade", "image", image_url)
                 # A bad row must prevent even the valid part of a directly submitted batch
                 # from being sent, preserving batch order and webhook correlation.
@@ -171,9 +195,9 @@ class TestKaapiSubmissionLogging(unittest.TestCase):
                     {"submission_id": "FR-2", "rendered_prompt": "Grade",
                      "artwork_image": image_url},
                 ]
-                with self.assertRaisesRegex(ValueError, "Kaapi image URL"):
+                with self.assertRaisesRegex(ValueError, "Kaapi media URL"):
                     self.client.submit(rows, "image")
-        with self.assertRaisesRegex(ValueError, "Kaapi image URL"):
+        with self.assertRaisesRegex(ValueError, "Kaapi media URL"):
             self.client.submit(self.rows, "image")  # Missing artwork_image.
         self.post.assert_not_called()
         self.frappe.get_doc.assert_not_called()
@@ -198,7 +222,10 @@ class TestKaapiSubmissionLogging(unittest.TestCase):
         )
         text_module = ModuleType("rag_service.feedback_utils.text_evaluation")
         text_module.TextEvaluationGenerator = Mock()
+        video_module = ModuleType("rag_service.feedback_utils.video_evaluation")
+        video_module.VideoEvaluationGenerator = Mock()
         with patch.dict(sys.modules, {
+            video_module.__name__: video_module,
             feedback_module.__name__: feedback_module,
             context_module.__name__: context_module,
             image_module.__name__: image_module,
@@ -266,16 +293,58 @@ class TestKaapiSubmissionLogging(unittest.TestCase):
         webhook = self._load("api.kaapi_webhook")
         raw = '{"assessment_id": "assessment-123", "status": "COMPLETED", "extra": [1, 2]}'
         self.frappe.request.get_data.return_value = raw
-        self.frappe.request.args = {"token": "webhook-secret", "site": "rag"}
-        self.frappe.request.headers = {"Authorization": "Bearer secret", "Content-Type": "application/json"}
+        self.frappe.request.args = {"site": "rag"}
+        self.frappe.request.headers = {
+            "Authorization": "Bearer secret",
+            "Content-Type": "application/json",
+            "X-Webhook-Signature": "signed-secret",
+            "X-Webhook-Timestamp": "1792082223157",
+        }
         self.frappe.request.content_type = "application/json"
         self.assertEqual(webhook._log_request(), "LOG-001")
         saved = self._saved_fields()
         self.assertEqual(saved["direction"], "Incoming")
         self.assertEqual(saved["raw_body"], raw)
         self.assertEqual(saved["assessment_id"], "assessment-123")
-        self.assertEqual(json.loads(saved["query_params"])["token"], "***")
         self.assertEqual(json.loads(saved["headers"])["Authorization"], "***")
+        self.assertEqual(json.loads(saved["headers"])["X-Webhook-Signature"], "***")
+        self.assertEqual(json.loads(saved["headers"])["X-Webhook-Timestamp"], "1792082223157")
+
+    def test_kaapi_hmac_signature_uses_timestamp_dot_raw_body(self):
+        webhook = self._load("api.kaapi_webhook")
+        raw = '{"assessment_id":"assessment-123","feedback":"बहुत अच्छा 👍"}'.encode()
+        timestamp = "1792082223157"
+        signature = hmac.new(
+            b"api-secret", timestamp.encode("ascii") + b"." + raw, hashlib.sha256
+        ).hexdigest()
+        headers = {
+            "X-Webhook-Signature": signature,
+            "X-Webhook-Timestamp": timestamp,
+        }
+        self.frappe.get_request_header.side_effect = headers.get
+
+        with patch.object(webhook.time, "time_ns", return_value=int(timestamp) * 1_000_000):
+            self.assertTrue(webhook._verify_signature(raw))
+            self.assertFalse(webhook._verify_signature(raw + b" "))
+
+    def test_kaapi_hmac_rejects_stale_or_missing_headers(self):
+        webhook = self._load("api.kaapi_webhook")
+        raw = b"{}"
+        timestamp = "1792082223157"
+        signature = hmac.new(
+            b"api-secret", timestamp.encode("ascii") + b"." + raw, hashlib.sha256
+        ).hexdigest()
+        headers = {
+            "X-Webhook-Signature": signature,
+            "X-Webhook-Timestamp": timestamp,
+        }
+        self.frappe.get_request_header.side_effect = headers.get
+        stale_now = (int(timestamp) + webhook._MAX_SIGNATURE_AGE_MS + 1) * 1_000_000
+        with patch.object(webhook.time, "time_ns", return_value=stale_now):
+            self.assertFalse(webhook._verify_signature(raw))
+
+        self.frappe.get_request_header.side_effect = {}.get
+        self.assertFalse(webhook._verify_signature(raw))
 
     def test_both_log_directions_queue_a_gcs_upload_after_commit(self):
         self.client.submit(self.rows, "text")

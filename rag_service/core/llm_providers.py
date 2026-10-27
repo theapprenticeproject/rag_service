@@ -969,6 +969,10 @@ class KaapiProvider(BaseLLMInterface):
     def _image_part(url: str) -> Dict:
         return {"type": "image", "content": {"format": "url", "value": url}}
 
+    @staticmethod
+    def _video_part(url: str) -> Dict:
+        return {"type": "video", "content": {"format": "url", "value": url}}
+
     def _messages_to_text(self, messages: List[Dict]) -> str:
         parts = []
         for m in messages:
@@ -981,15 +985,15 @@ class KaapiProvider(BaseLLMInterface):
         return "\n\n".join(p for p in parts if p)
 
     @staticmethod
-    def _image_url(image_source) -> str:
-        if isinstance(image_source, str):
-            return image_source
-        if isinstance(image_source, dict):
+    def _media_url(media_source) -> str:
+        if isinstance(media_source, str):
+            return media_source
+        if isinstance(media_source, dict):
             for k in ("url", "source_url", "public_url", "gcs_url", "submission_url"):
-                if image_source.get(k):
-                    return image_source[k]
+                if media_source.get(k):
+                    return media_source[k]
         raise ValueError(
-            "KaapiProvider vision requires a public image URL (pass submission_url)")
+            "KaapiProvider media input requires a public URL (pass submission_url)")
 
     # ---- public interface ----
     async def generate(self, messages: List[Dict]):
@@ -998,8 +1002,13 @@ class KaapiProvider(BaseLLMInterface):
         return out, self.calculate_cost({"usage": usage}), 0.0
 
     async def generate_with_vision(self, image_source, prompt: str, mime_type: Optional[str] = None):
-        url = self._image_url(image_source)
+        url = self._media_url(image_source)
         out, usage = await self._run([self._text_part(prompt), self._image_part(url)])
+        return KaapiResponse(out, usage)
+
+    async def generate_with_video(self, video_source, prompt: str, mime_type: Optional[str] = None):
+        url = self._media_url(video_source)
+        out, usage = await self._run([self._text_part(prompt), self._video_part(url)])
         return KaapiResponse(out, usage)
 
     def calculate_cost(self, response) -> float:

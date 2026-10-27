@@ -1,7 +1,7 @@
 # Copyright (c) 2026, TAP and contributors
 # For license information, please see license.txt
 
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit
 
 import frappe
 from frappe.model.document import Document
@@ -30,9 +30,9 @@ class KaapiSettings(Document):
         if self.callback_url:
             self._validate_url(self.callback_url, "Callback URL")
             if any(key == "token" for key, _ in parse_qsl(urlsplit(self.callback_url).query)):
-                frappe.throw("Enter Callback URL without a token; use Webhook Secret instead.")
+                frappe.throw("Enter Callback URL without a token; Kaapi authenticates with HMAC headers.")
 
-        for kind in ("image", "text"):
+        for kind in ("image", "text", "video"):
             self.set(f"{kind}_config_id", (self.get(f"{kind}_config_id") or "").strip())
             field = f"{kind}_config_version"
             version = self.get(field)
@@ -52,8 +52,8 @@ class KaapiSettings(Document):
                 frappe.throw("Callback URL is required to enable Kaapi assessments.")
             if not self.allow_insecure_webhook and not self.get_secret("webhook_secret"):
                 frappe.throw("Webhook Secret is required to enable Kaapi assessments.")
-            if not self.image_config_id and not self.text_config_id:
-                frappe.throw("Configure at least one Image or Text Config ID for Kaapi assessments.")
+            if not (self.image_config_id or self.text_config_id or self.video_config_id):
+                frappe.throw("Configure at least one Image, Text or Video Config ID for Kaapi assessments.")
 
     @staticmethod
     def _validate_url(value, label, allow_query=True):
@@ -77,16 +77,11 @@ class KaapiSettings(Document):
         return (self.get_password(fieldname, raise_exception=False) or "").strip()
 
     def get_callback_url(self):
-        """Keep the secret encrypted at rest; add the encoded token only when submitting."""
+        """Return the bare callback URL; Kaapi authenticates callbacks with HMAC headers."""
         callback_url = (self.callback_url or "").strip()
         if not callback_url:
             raise ValueError("Set Callback URL in Kaapi Settings; assessments require a webhook.")
         secret = self.get_secret("webhook_secret")
         if not secret and not self.allow_insecure_webhook:
             raise ValueError("Set Webhook Secret in Kaapi Settings.")
-        parts = urlsplit(callback_url)
-        query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
-                 if key != "token"]
-        if secret:
-            query.append(("token", secret))
-        return urlunsplit(parts._replace(query=urlencode(query)))
+        return callback_url

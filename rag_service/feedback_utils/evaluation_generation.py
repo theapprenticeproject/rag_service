@@ -164,13 +164,25 @@ class EvaluationGenerator:
                 "Science Lab" if course_vertical == "Science" else course_vertical
             )
 
+            filters = {
+                "is_active": 1,
+                "media_type": media_type,
+                "prompt_type": prompt_type,
+                "activity_type": activity_type,
+                "course_vertical": template_course_vertical,
+            }
             templates = frappe.get_list(
                 "Prompt Template",
-                filters={"is_active": 1, "media_type": media_type, "prompt_type": prompt_type, 
-                         "activity_type": activity_type, "course_vertical": template_course_vertical },
+                filters=filters,
                 order_by="version desc",
                 limit=1,
             )
+
+            if not templates:
+                raise frappe.DoesNotExistError(
+                    f"No active Prompt Template matched filters: {json.dumps(filters)} "
+                    f"(course_vertical received: {course_vertical!r})"
+                )
 
             template = frappe.get_doc("Prompt Template", templates[0].name)
             print(f"Using {media_type} {prompt_type} template: {template.template_name}")
@@ -187,7 +199,12 @@ class EvaluationGenerator:
             error_msg = f"Template Error: {str(e)}"
             print(f"\nError: {error_msg}")
             frappe.log_error("Template Error", error_msg)
-            raise Exception("No active template found")
+            raise Exception(
+                f"No active template found for media_type={media_type!r}, "
+                f"prompt_type={prompt_type!r}, activity_type={activity_type!r}, "
+                f"course_vertical={course_vertical!r} "
+                f"(searched as {template_course_vertical!r}). Cause: {e}"
+            )
 
 
     def _get_expected_format(self, template: Any, prompt_type: str = "feedback") -> Dict:

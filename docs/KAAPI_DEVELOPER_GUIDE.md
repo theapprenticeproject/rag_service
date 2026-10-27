@@ -91,7 +91,8 @@ assessment_id = client.submit(rows, media_type, request_metadata={"kind": media_
 - Auth: `X-API-KEY: ApiKey <key>` (encrypted API Key from Kaapi Settings).
 - `_config_for(media_type)` → `(config_id, version)` from the Image/Text Config fields in Kaapi Settings.
 - `submit()` POSTs `{config:{id,version}, input:{data:rows}, callback_url, request_metadata}`,
-  returns `data.assessment_id`. Requires Callback URL and Webhook Secret in Kaapi Settings (webhook-only); the token is appended automatically.
+  returns `data.assessment_id`. Requires a bare Callback URL and the same Webhook Secret
+  registered in Kaapi; the secret is not sent in the assessment request.
 - Each row: `{submission_id, rendered_prompt[, artwork_image]}` — shaped to the config's
   `input_schema`.
 
@@ -118,7 +119,7 @@ Resumable: submitted rows leave the `Pending` set; a re-run continues cleanly.
 Each outgoing assessment attempt is saved in **Kaapi Webhook Log** before the HTTP
 request. Filter **Direction = Outgoing** and open **Raw Body** for the complete JSON:
 config, all input rows (rendered prompts and image URLs), callback URL, and request
-metadata. Only the callback URL's secret token is redacted; the sent payload is unchanged.
+metadata. The sent payload is unchanged and contains no webhook secret.
 The log changes from `Submitting` to `Submitted` (with Assessment ID and response data)
 or `Error`. Payloads remain saved on HTTP failures. Incoming callbacks create separate
 `Incoming` entries, correlated by Assessment ID. Run `bench --site <site> migrate`
@@ -134,13 +135,15 @@ before using these fields.
 ```python
 @frappe.whitelist(allow_guest=True)
 def receive():
-    if not _verify_secret(): return 401
-    payload = _raw_body()
+    raw_body = _raw_body_bytes()
+    if not _verify_signature(raw_body): return 401
+    payload = _raw_body(raw_body)
     return process_payload(payload)
 ```
 
-- `_verify_secret()` — compares `?token=` (or `X-Webhook-Secret`) to the encrypted Webhook Secret
-  in Kaapi Settings using a constant-time comparison. Allow Insecure Webhook bypasses (local testing only).
+- `_verify_signature()` — verifies the lowercase hex HMAC-SHA256 in `X-Webhook-Signature`
+  over `<X-Webhook-Timestamp>.<raw body>` using the encrypted Webhook Secret. Timestamps
+  outside the five-minute replay window are rejected. Allow Insecure Webhook bypasses local tests only.
 - `_extract(payload)` → `(assessment_id, items, total_items, status)`, tolerating the
   `{success, data:{...}}` envelope or the inner object.
 
@@ -204,7 +207,7 @@ Config bodies live in `Desktop/RRM/kaapi_config_{image,text}_prod.json`. Current
 
 ## 8. Configuration (Kaapi Settings)
 Open `/app/kaapi-settings` as a System Manager. Configure Enable Assessments, Base URL,
-API Key, Image/Text Config IDs and Versions, Callback URL (without a token), and Webhook Secret.
+API Key, Image/Text Config IDs and Versions, bare Callback URL, and Webhook Secret.
 Keep Allow Insecure Webhook unchecked in production. API Key and Webhook Secret use encrypted
 Password fields. See `KAAPI_DEPLOY_CHECKLIST.md` for values and migration from environment variables.
 
@@ -234,10 +237,10 @@ already submitted remain authenticated and accepted when assessments are disable
   `/home/frappe/frappe-bench/apps/rag_service` (sync edits from the mounted source when testing).
 - Migrate after doctype changes: `bench --site rag.localhost migrate`.
 - Run submit phase: `bench --site rag.localhost execute rag_service.core.batch_runner.run_submit_phase`.
-- Webhook over HTTP: start `bench serve --port 8000` (with Webhook Secret saved in Kaapi Settings), then
-  `POST` a Kaapi payload to `/api/method/rag_service.api.kaapi_webhook.receive?token=<secret>`.
+- Webhook over HTTP: start `bench serve --port 8000`, register the same Webhook Secret in
+  Kaapi, and let Kaapi POST its signed callback to the bare endpoint.
 - Verified end-to-end on the bench with real `submissions.csv` images: 12 rows → real Kaapi
-  grade → real webhook payload → HTTP POST to `receive()` → all delivered (401 on bad token).
+  grade → signed webhook payload → HTTP POST to `receive()` → all delivered (401 on bad signature).
 
 ---
 
