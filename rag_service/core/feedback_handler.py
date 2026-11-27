@@ -12,13 +12,14 @@ from ..utils.submission_data import normalize_submission_payload
 from ..rag_service.doctype.kaapi_settings.kaapi_settings import assessments_enabled
 
 # Submission types that are DEFERRED to the nightly batch when batch mode is on.
-# Audio is always processed in real time (not handled by the batch grader).
-DEFERRED_SUBMISSION_TYPES = {"image", "text", "emoji", "video"}
+# Audio is now graded through Kaapi batch assessment too (see audio_evaluation.py),
+# so it's deferred like image/text/video instead of always processing in real time.
+DEFERRED_SUBMISSION_TYPES = {"image", "text", "emoji", "video", "audio"}
 
 
 def batch_mode_enabled() -> bool:
-    """When on, image/text/video submissions are saved as Pending and graded by the
-    nightly batch instead of in real time. Kaapi assessments always require deferral;
+    """When on, image/text/video/audio submissions are saved as Pending and graded by
+    the nightly batch instead of in real time. Kaapi assessments always require deferral;
     RAG_BATCH_MODE controls only the legacy synchronous grading path."""
     if assessments_enabled():
         return True
@@ -47,8 +48,8 @@ class FeedbackHandler:
             )
             return
 
-        # Batch mode: image/text/video are DEFERRED — save a Pending record and stop
-        # (the nightly batch grades them). Audio keeps processing in real time.
+        # Batch mode: image/text/video/audio are DEFERRED — save a Pending record and stop
+        # (the nightly batch grades them).
         if batch_mode_enabled() and submission_type in DEFERRED_SUBMISSION_TYPES:
             request_id = await self.create_feedback_request(
                 message_data, submission_data, status="Pending"

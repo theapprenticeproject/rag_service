@@ -1,0 +1,58 @@
+{
+    "name": "Tap audio feedback assessment",
+    "description": "Validity assessment and feedback for audio submissions.",
+    "tag": "ASSESSMENT",
+    "config_blob": {
+        "input_schema": {
+                "audio": {
+                    "type": "audio",
+                    "format": "url"
+                },
+                "submission_id": {
+                    "type": "text",
+                    "format": null
+                },
+                "rendered_prompt": {
+                    "type": "text",
+                    "format": null
+                }
+            },
+        "assessment": {
+                "type": "text",
+                "params": {
+                    "model": "gemini-3.5-flash-lite",
+                    "submission": "{rendered_prompt}\n\nReturn submission_id exactly as: {submission_id}",
+                    "instructions": "Execute the grading prompt provided in the submission against the attached audio. Follow that prompt's rubric and scoring exactly. Copy the given submission_id verbatim into the submission_id output field. Return output strictly matching the JSON schema.",
+                    "json_output_schema": {
+                        "type": "object",
+                        "required": [
+                            "submission_id",
+                            "overall_feedback",
+                            "overall_feedback_translated",
+                            "submission_validity"
+                        ],
+                        "properties": {
+                            "submission_id": {
+                                "type": "string",
+                                "description": "echo the input submission_id exactly as given"
+                            },
+                            "overall_feedback": {
+                                "type": "string",
+                                "description": "encouraging overall feedback"
+                            },
+                            "submission_validity": {
+                                "type": "string",
+                                "description": "validity of the submission, one of: valid or invalid"
+                            },
+                            "overall_feedback_translated": {
+                                "type": "string",
+                                "description": "overall feedback in the student's language as specified in the prompt. Use the respective script for the language."
+                            }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "provider": "google-gcp"
+            }
+    }
+}

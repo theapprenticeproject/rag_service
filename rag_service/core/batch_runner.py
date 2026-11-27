@@ -2,15 +2,16 @@
 """
 Nightly batch grader.
 
-Flow change: during the day, image/text/video submissions are NOT graded in real time —
+Flow: image/text/video/audio submissions are NOT graded in real time —
 `FeedbackHandler.handle_submission` saves them to the Feedback Request doctype with
-status="Pending" (see `feedback_handler.batch_mode_enabled`). Audio is still graded
-in real time (the batch grader does not handle it).
+status="Pending" (see `feedback_handler.batch_mode_enabled`). tapapp rows are submitted
+to Kaapi immediately instead (see feedback_handler's fast-path), so this job's normal
+fetch excludes them — they're not picked up by the scheduled run, only explicitly named.
 
-This job grades all Pending image/text/video rows overnight, IN PARALLEL, through the exact
-same stages as the real-time path — plagiarism gate -> Kaapi grading -> feedback -> and
-then delivers each result, one by one, to the outbound `feedback_results_queue` (via
-`FeedbackService.process_feedback`) so the LMS picks it up.
+This job grades all Pending image/text/video/audio rows overnight, IN PARALLEL, through
+the exact same stages as the real-time path — plagiarism gate -> Kaapi grading -> feedback
+-> and then delivers each result, one by one, to the outbound `feedback_results_queue`
+(via `FeedbackService.process_feedback`) so the LMS picks it up.
 
 Parallelism uses threads (the Kaapi HTTP calls are blocking `requests`), and EACH worker
 thread gets its own Frappe connection — the safe way to parallelize Frappe work.
@@ -33,7 +34,7 @@ import frappe
 from ..rag_service.doctype.kaapi_settings.kaapi_settings import assessments_enabled
 
 # Must match feedback_handler.DEFERRED_SUBMISSION_TYPES.
-DEFERRED_SUBMISSION_TYPES = ["image", "text", "emoji", "video"]
+DEFERRED_SUBMISSION_TYPES = ["image", "text", "emoji", "video", "audio"]
 
 def _assessment_mode() -> bool:
     return assessments_enabled()
@@ -44,6 +45,8 @@ def _media_kind(submission_type: str) -> str:
     submission_type = (submission_type or "").lower()
     if submission_type in ("text", "emoji"):
         return "text"
+    if submission_type == "audio":
+        return "audio"
     return "video" if submission_type == "video" else "image"
 
 
@@ -176,6 +179,7 @@ async def _prepare_page(page: List[str]) -> Dict:
     from ..feedback_utils.image_evaluation_both import ImageEvaluationGenerator
     from ..feedback_utils.text_evaluation import TextEvaluationGenerator
     from ..feedback_utils.video_evaluation import VideoEvaluationGenerator
+    from ..feedback_utils.audio_evaluation import AudioEvaluationGenerator
     from .kaapi_assessment import KaapiAssessmentClient
 
     fs = FeedbackService()
@@ -210,11 +214,17 @@ async def _prepare_page(page: List[str]) -> Dict:
                 "image": ImageEvaluationGenerator,
                 "text": TextEvaluationGenerator,
                 "video": VideoEvaluationGenerator,
+                "audio": AudioEvaluationGenerator,
             }[kind](fs)
             req = gen.build_eval_request(ctx, submission, for_assessment=True)
+            if kind == "video":
+                media_url = req.get("video_url")
+            elif kind == "audio":
+                media_url = req.get("audio_url")
+            else:
+                media_url = req.get("image_url")
             row = KaapiAssessmentClient.build_row(
-                fr.submission_id, req["combined_prompt"], kind,
-                req.get("video_url") if kind == "video" else req.get("image_url"),
+                fr.submission_id, req["combined_prompt"], kind, media_url,
             )
         except Exception as e:
             _mark_failed(fr_name, f"prepare failed: {e}")
@@ -260,9 +270,9 @@ def _submit_bucket(client, kind: str, eval_type: str, items: List) -> int:
 
 
 def run_submit_phase(page_size: int = 100, max_items: int = 0, names: List[str] = None) -> Dict:
-    """Phase 1: render all Pending image/text/video rows (or only `names`) and submit them to Kaapi in batches.
-    Completion arrives later via the webhook (see api/kaapi_webhook.py). Flagged rows are
-    delivered canned inline. Resumable: submitted rows leave the Pending set."""
+    """Phase 1: render all Pending image/text/video/audio rows (or only `names`) and submit
+    them to Kaapi in batches. Completion arrives later via the webhook (see api/kaapi_webhook.py).
+    Flagged rows are delivered canned inline. Resumable: submitted rows leave the Pending set."""
     from .kaapi_assessment import KaapiAssessmentClient
 
     client = KaapiAssessmentClient()
@@ -321,7 +331,7 @@ def run_nightly_batch(page_size: int = 100, concurrency: int = 8, max_items: int
 
 
 def _run_nightly_batch_sync(page_size: int = 100, concurrency: int = 8, max_items: int = 0) -> Dict:
-    """Grade all Pending image/text/video submissions in parallel, page by page.
+    """Grade all Pending image/text/video/audio submissions in parallel, page by page.
 
     page_size   how many to pull per page
     concurrency how many to grade at once (threads); tune to Kaapi rate limits

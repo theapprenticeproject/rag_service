@@ -2,7 +2,7 @@
 """
 Kaapi ASSESSMENT API client — the SUBMIT side of the two-phase grading flow.
 
-Phase 1 (this module): pack rendered prompts (+ image URLs) into a batch and
+Phase 1 (this module): pack rendered prompts (+ media URL) into a batch and
 `POST /assessments` with our `callback_url`. Kaapi grades in parallel and POSTs the
 results to our webhook (phase 2, see `api/kaapi_webhook.py`).
 
@@ -13,9 +13,9 @@ Why it's built this way (verified against the live API, see KAAPI_ASSESSMENT_SWI
   `output.assessment = null` and echoes NO id. So each row carries a `submission_id`
   (the Feedback Request name) for validation, and we persist its batch index as the
   primary correlation key.
-- One thin generic config per media type (image/text/video) carries the fixed grading
-  instructions + output schema; the rubric/description/level/language ride inside the
-  `rendered_prompt` input, so a single config serves every assignment.
+- One thin generic config per media type (image/text/video/audio) carries the fixed
+  grading instructions + output schema; the rubric/description/level/language ride
+  inside the `rendered_prompt` input, so a single config serves every assignment.
 
 Configuration and encrypted credentials come from the site's Kaapi Settings singleton.
 No environment variables or LLM Settings record are required for assessments.
@@ -47,7 +47,7 @@ class KaapiAssessmentClient:
     # ---- config lookup ----
     def config_for(self, media_type: str, eval_type: str):
         """The Kaapi Config row for this media type and eval type."""
-        kind = media_type if media_type in ("text", "video") else "image"
+        kind = media_type if media_type in ("text", "video", "audio") else "image"
         for row in self.settings.configs:
             if row.media_type == kind and row.eval_type == eval_type:
                 return row
@@ -169,10 +169,16 @@ class KaapiAssessmentClient:
 
     @staticmethod
     def _media_field(media_type: str) -> Optional[str]:
-        """The input_schema field that carries the media URL (None for text)."""
+        """The input_schema field that carries the media URL (None for text).
+        Must exactly match the input_schema key used when the Kaapi Config for that
+        media_type was created (see Kaapi Configs/feedback_audio.json for audio)."""
         if media_type == "text":
             return None
-        return "artwork_video" if media_type == "video" else "artwork_image"
+        if media_type == "video":
+            return "artwork_video"
+        if media_type == "audio":
+            return "audio"
+        return "artwork_image"
 
     def submit(self, rows: List[Dict], config,
                request_metadata: Optional[Dict] = None) -> str:
